@@ -1,0 +1,24 @@
+name: dribble-dojo
+
+services:
+  db:
+    image: postgres:16-alpine
+    # Default bridge: avoids creating a per-project network (some dev hosts run out of
+    # address pools when many compose projects exist).
+    network_mode: bridge
+    environment:
+      POSTGRES_USER: dojo
+      POSTGRES_PASSWORD: dojo
+      POSTGRES_DB: dribble_dojo
+    ports:
+      - "5433:5432"
+    volumes:
+      - dojo-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dojo -d dribble_dojo"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  dojo-pg:

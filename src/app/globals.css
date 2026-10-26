@@ -1,0 +1,22 @@
+:root {
+  --ink: #1a1410;
+  --paper: #fbf6ea;
+  --red: #c22a22;
+  --yellow: #ffd23a;
+  --panel-dark: #3a2a1e;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #2a1b10;
+  color: var(--ink);
+  font-family: var(--font-body), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}

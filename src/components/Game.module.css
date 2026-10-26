@@ -1,0 +1,22 @@
+.stage {
+  position: fixed;
+  inset: 0;
+  background: #2a1b10;
+}
+
+.stage canvas {
+  display: block;
+}
+
+.error {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  margin: 0;
+  padding: 16px 24px;
+  background: var(--paper);
+  border: 4px solid var(--ink);
+  box-shadow: 6px 6px 0 var(--ink);
+  font-weight: 800;
+}

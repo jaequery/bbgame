@@ -1,0 +1,288 @@
+.hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  color: var(--ink);
+  user-select: none;
+}
+
+/* Subtle screentone over the whole frame, plus a warm vignette. */
+.halftone {
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(circle at center, rgba(40, 22, 10, 0.55) 0.9px, transparent 1.3px),
+    radial-gradient(ellipse at center, transparent 55%, rgba(40, 20, 6, 0.38) 100%);
+  background-size: 5px 5px, 100% 100%;
+  mix-blend-mode: multiply;
+  opacity: 0.16;
+}
+
+.panel {
+  background: var(--paper);
+  border: 4px solid var(--ink);
+  box-shadow: 6px 6px 0 var(--ink);
+}
+
+.scoreCard {
+  composes: panel;
+  position: absolute;
+  top: 24px;
+  left: 24px;
+  display: grid;
+  padding: 10px 18px 12px;
+  transform: rotate(-2deg);
+  min-width: 170px;
+}
+
+.scoreLabel {
+  font-family: var(--font-display), Impact, sans-serif;
+  font-size: 14px;
+  letter-spacing: 0.3em;
+  color: var(--red);
+}
+
+.scoreValue {
+  font-family: var(--font-display), Impact, sans-serif;
+  font-size: 44px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.best {
+  font-weight: 800;
+  font-size: 14px;
+  letter-spacing: 0.04em;
+}
+
+.combo {
+  position: absolute;
+  top: 150px;
+  left: 28px;
+  display: grid;
+  justify-items: start;
+}
+
+.comboValue {
+  font-family: var(--font-display), Impact, sans-serif;
+  font-size: 76px;
+  line-height: 0.9;
+  font-style: italic;
+  color: var(--yellow);
+  -webkit-text-stroke: 3px var(--ink);
+  paint-order: stroke fill;
+  text-shadow: 5px 5px 0 var(--ink);
+}
+
+.comboLabel {
+  font-family: var(--font-display), Impact, sans-serif;
+  font-size: 22px;
+  letter-spacing: 0.18em;
+  color: var(--paper);
+  -webkit-text-stroke: 2px var(--ink);
+  paint-order: stroke fill;
+  transform: rotate(-3deg);
+}
+
+.chain {
+  display: flex;
+  gap: 18px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chain li {
+  position: relative;
+}
+
+.chain li + li::before {
+  content: "▶";
+  position: absolute;
+  left: -16px;
+  top: -3px;
+  font-size: 11px;
+  line-height: 28px;
+  color: var(--paper);
+  text-shadow: 1px 1px 0 var(--ink);
+}
+
+.chainKey,
+.chainEmpty {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  font-weight: 900;
+  font-size: 14px;
+  border: 3px solid var(--ink);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+
+.chainKey {
+  background: var(--paper);
+}
+
+.chainEmpty {
+  background: rgba(251, 246, 234, 0.35);
+  border-style: dashed;
+  box-shadow: none;
+}
+
+.title {
+  position: absolute;
+  top: 22px;
+  right: 28px;
+  display: grid;
+  justify-items: end;
+}
+
+.titleJp {
+  font-family: var(--font-jp), sans-serif;
+  font-size: 34px;
+  line-height: 1.1;
+  color: var(--ink);
+  text-shadow: 2px 2px 0 var(--paper);
+}
+
+.titleEn {
+  font-weight: 900;
+  font-size: 11px;
+  letter-spacing: 0.4em;
+  color: var(--red);
+}
+
+.view {
+  composes: panel;
+  position: absolute;
+  left: 24px;
+  bottom: 24px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px 8px 8px;
+  transform: rotate(1deg);
+}
+
+.viewKey {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  background: var(--ink);
+  color: var(--yellow);
+  font-family: var(--font-display), Impact, sans-serif;
+  font-size: 22px;
+}
+
+.viewName {
+  font-family: var(--font-display), Impact, sans-serif;
+  font-size: 22px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.viewHint {
+  font-size: 12px;
+  font-weight: 800;
+  opacity: 0.7;
+}
+
+.viewHint kbd {
+  font: inherit;
+  padding: 0 5px;
+  border: 2px solid var(--ink);
+}
+
+.controls {
+  position: absolute;
+  right: 24px;
+  bottom: 24px;
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  gap: 8px 18px;
+  padding: 14px 18px;
+  background: var(--panel-dark);
+  border: 4px solid var(--ink);
+  box-shadow: 6px 6px 0 var(--ink);
+  color: var(--paper);
+  font-weight: 800;
+  font-size: 14px;
+}
+
+.control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.key,
+.keyWide {
+  display: grid;
+  place-items: center;
+  height: 28px;
+  background: var(--paper);
+  color: var(--ink);
+  border: 2px solid var(--ink);
+  box-shadow: 2px 2px 0 #000;
+  font: 900 13px/1 var(--font-body), sans-serif;
+}
+
+.key {
+  width: 28px;
+}
+
+.keyWide {
+  padding: 0 7px;
+  font-size: 11px;
+}
+
+@media (max-width: 720px) {
+  .scoreCard {
+    top: 16px;
+    left: 16px;
+    min-width: 0;
+    padding: 6px 12px 8px;
+  }
+
+  .scoreValue {
+    font-size: 30px;
+  }
+
+  .combo {
+    top: 112px;
+    left: 18px;
+  }
+
+  .comboValue {
+    font-size: 48px;
+  }
+
+  .title {
+    top: 16px;
+    right: 16px;
+  }
+
+  .titleJp {
+    font-size: 22px;
+  }
+
+  .titleEn {
+    display: none;
+  }
+
+  .view {
+    left: 16px;
+    bottom: 16px;
+  }
+
+  .controls {
+    right: 16px;
+    bottom: 76px;
+    left: 16px;
+    grid-template-columns: repeat(4, auto);
+    font-size: 11px;
+    gap: 6px 10px;
+    padding: 10px;
+  }
+}

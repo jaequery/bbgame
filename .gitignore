@@ -9,11 +9,21 @@ node_modules
 # build output
 dist
 build
+/.next/
+/out/
+*.tsbuildinfo
+next-env.d.ts
+.vercel
+
+# verification evidence
+/artifacts/
+/test-results/
 
 # editor / OS
 .DS_Store
 .idea
 .vscode
+npm-debug.log*
 
 # Fredrin's machine-local tool state — never project content
 .fredrin/
