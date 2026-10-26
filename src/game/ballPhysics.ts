@@ -14,9 +14,14 @@ import {
 } from "./dimensions";
 
 /** Thin-shelled sphere: I = 2/3 m r². */
-const INERTIA = (2 / 3) * BALL_MASS * BALL_RADIUS * BALL_RADIUS;
+export const INERTIA = (2 / 3) * BALL_MASS * BALL_RADIUS * BALL_RADIUS;
 /** Below this rebound speed the ball stops bouncing and rolls. */
 const SETTLE_SPEED = 0.35;
+
+/** Something the free ball can hit besides the floor (the hoops). */
+export interface BallObstacle {
+  collide(ball: BallBody, dt: number): void;
+}
 
 export interface BounceEvent {
   position: THREE.Vector3;
@@ -38,6 +43,8 @@ export class BallBody {
   readonly orientation = new THREE.Quaternion();
   kinematic = true;
   rolling = false;
+  /** Checked after every free substep. */
+  obstacles: BallObstacle[] = [];
 
   private readonly prev = new THREE.Vector3();
   private readonly tmp = new THREE.Vector3();
@@ -81,6 +88,7 @@ export class BallBody {
         v[axis] *= -BALL_WALL_RESTITUTION;
       }
     }
+    for (const o of this.obstacles) o.collide(this, dt);
     this.integrateSpin(dt);
   }
 
@@ -100,6 +108,31 @@ export class BallBody {
     this.velocity.copy(velocity);
     if (spin) this.spin.copy(spin);
     else rollingSpin(velocity, this.spin);
+  }
+
+  /**
+   * Collision with a surface whose outward normal is `n` (unit, pointing at the
+   * ball centre): restitution along the normal, Coulomb friction at the contact
+   * point trading slide for spin. Returns the normal impact speed (0 if separating).
+   */
+  bounceOff(n: THREE.Vector3, restitution: number, friction: number): number {
+    const v = this.velocity;
+    const vn = v.dot(n);
+    if (vn >= 0) return 0;
+    const jn = -(1 + restitution) * vn * BALL_MASS;
+    v.addScaledVector(n, jn / BALL_MASS);
+    // Contact point velocity v + ω × r, with r = −R n from centre to contact.
+    const r = this.tmp.copy(n).multiplyScalar(-BALL_RADIUS);
+    const slip = new THREE.Vector3().crossVectors(this.spin, r).add(v);
+    slip.addScaledVector(n, -slip.dot(n));
+    const slipSpeed = slip.length();
+    if (slipSpeed > 1e-5) {
+      const stop = slipSpeed / (1 / BALL_MASS + (BALL_RADIUS * BALL_RADIUS) / INERTIA);
+      const J = slip.multiplyScalar(-Math.min(stop, friction * jn) / slipSpeed);
+      v.addScaledVector(J, 1 / BALL_MASS);
+      this.spin.addScaledVector(r.cross(J), 1 / INERTIA);
+    }
+    return -vn;
   }
 
   /** Horizontal speed (m/s). */

@@ -9,7 +9,8 @@ import { BallBody, planDribble, predictCatch, type BounceEvent } from "./ballPhy
 export type Hand = "L" | "R";
 export type DribbleKey = "J" | "L" | "I" | "K" | ",";
 export type MoveKind = "pound" | "high" | "switch" | "crossover" | "between" | "behind";
-export type DribbleState = "held" | "carry" | "flight" | "loose";
+/** `shot`: the jumper has the ball (gathered, in the air, or on its way back from the rebound). */
+export type DribbleState = "held" | "carry" | "flight" | "loose" | "shot";
 export type Timing = "clean" | "sloppy";
 
 /** Tunable timing windows (seconds) and dribble geometry (metres). */
@@ -193,6 +194,7 @@ export class DribbleController {
     switch (this.state) {
       case "loose":
       case "carry":
+      case "shot":
         return;
       case "held":
         this.addRollKey(key, now);
@@ -242,17 +244,34 @@ export class DribbleController {
           const c = Math.cos(this.body.yaw);
           const s = Math.sin(this.body.yaw);
           const localX = (b.x - p.x) * c - (b.z - p.z) * s;
-          this.hand = localX >= 0 ? "L" : "R";
-          this.state = "held";
-          this.heightMode = "low";
-          this.roll = [];
-          this.contactTiming = "clean";
-          this.contactError = 0;
-          this.events.pickup(this.hand);
+          this.receive(localX >= 0 ? "L" : "R");
         }
         break;
       }
+      case "shot":
+        break; // the shot controller moves the ball
     }
+  }
+
+  /** Gives the ball up to the jumper: no more dribble input until `receive`. */
+  surrender() {
+    this.state = "shot";
+    this.roll = [];
+    this.pending = null;
+    this.split = 0;
+    this.ball.kinematic = true;
+    this.ball.spin.set(0, 0, 0);
+  }
+
+  /** The ball comes into `hand` (a pickup or a pass): back to dribbling from a hold. */
+  receive(hand: Hand) {
+    this.hand = hand;
+    this.state = "held";
+    this.heightMode = "low";
+    this.roll = [];
+    this.contactTiming = "clean";
+    this.contactError = 0;
+    this.events.pickup(hand);
   }
 
   // ── Input ──────────────────────────────────────────────────────────────

@@ -34,6 +34,8 @@ Full launch/verify procedure: `.claude/skills/verify-app/SKILL.md` (mirrored in 
 - `src/game/` — all three.js code, client-only:
   - `dimensions.ts` — every real-world measurement (metres). Use these, never magic numbers.
   - `court.ts` (floor + painted lines), `hoop.ts`, `gym.ts`, `player.ts`, `ball.ts` — scene parts.
+  - `ballPhysics.ts`, `hoopPhysics.ts` — the ball as a rigid body; rim/backboard/net colliders.
+  - `dribble.ts`, `shot.ts`, `combo.ts` — dribble moves, the Space jumper, scoring + cash-in.
   - `toon.ts` — cel-shaded materials (`toon()`) and ink outlines (`outline()` / `inked()`).
   - `cameras.ts` — the three views and the glide between them.
   - `hudStore.ts` — tiny store the game loop writes and the HUD reads (score, combo, key chain, view).
@@ -56,7 +58,7 @@ Full launch/verify procedure: `.claude/skills/verify-app/SKILL.md` (mirrored in 
 - **Walls are single-sided, facing inward**, so the high isometric camera sees through the near
   walls. Keep new wall-mounted props single-sided too.
 - **Debug handle:** `window.__game` (dev only) exposes `frames`, `world`, `player`, `ball`,
-  `camera`, `cycleView()`, `setView()`. Extend it when you add game state that automation needs.
+  `camera`, `cycleView()`, `setView()`, `shot`, `placePlayer()`, `setTimeScale()`. Extend it when you add game state that automation needs.
 - **Controls** (canonical): WASD move · J left hand · L right hand · I high/crossover path ·
   K between legs · `,` behind back · Space jumper · V cycle camera (B → A → C).
 - Never commit `.env`; document new env vars in `.env.example`.

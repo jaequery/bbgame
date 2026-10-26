@@ -40,6 +40,8 @@ export interface PoseFrame {
   split: number;
   /** World wrist targets; null = that arm guards. */
   hands: Record<Side, THREE.Vector3 | null>;
+  /** Jump-shot pose: `dip` 0…1 knees loading before take-off, `air` 0…1 legs extended off the floor. */
+  shoot?: { dip: number; air: number };
 }
 
 export interface Player {
@@ -199,6 +201,9 @@ export function createPlayer(fonts: GameFonts): Player {
   let stride = 0; // 0…1, how much of the gait is showing
   let crouch = 0;
   let split = 0;
+  let dip = 0;
+  let air = 0;
+  let upright = 0;
   let ready = false;
 
   return {
@@ -209,6 +214,9 @@ export function createPlayer(fonts: GameFonts): Player {
       stride += (Math.min(1, f.speed / 3.5) - stride) * k(10);
       crouch += ((f.dribbling ? 1 : 0) - crouch) * k(6);
       split += (f.split - split) * k(14);
+      dip += ((f.shoot?.dip ?? 0) - dip) * k(20);
+      air += ((f.shoot?.air ?? 0) - air) * k(16);
+      upright += ((f.shoot ? 1 : 0) - upright) * k(10);
       // One full gait cycle every ~1.5 m.
       phase += (f.speed * f.dt * Math.PI * 2) / 1.5;
 
@@ -217,12 +225,18 @@ export function createPlayer(fonts: GameFonts): Player {
       const swing = Math.sin(phase) * 0.55 * stride;
       const lift = 0.9 * stride;
       const sink = 0.07 * crouch;
-      hips.position.y = standY + bob - sink - Math.abs(Math.cos(phase)) * 0.035 * stride;
-      j.hipL.rotation.x = STANCE.hip - 0.18 * crouch - swing - 0.32 * split + bob;
-      j.hipR.rotation.x = STANCE.hipR - 0.18 * crouch + swing + 0.32 * split + bob;
-      j.kneeL.rotation.x = STANCE.knee + 0.3 * crouch + Math.max(0, Math.cos(phase)) * lift - bob * 2;
-      j.kneeR.rotation.x = STANCE.knee + 0.3 * crouch + Math.max(0, -Math.cos(phase)) * lift - bob * 2;
-      j.spine.rotation.x = 0.28 + 0.1 * crouch + 0.08 * stride;
+      // Jumper: knees load on the dip, then the legs straighten and the toes point in the air.
+      const load = 0.12 * dip;
+      const extend = air;
+      hips.position.y = standY + bob - sink - load - Math.abs(Math.cos(phase)) * 0.035 * stride;
+      j.hipL.rotation.x = STANCE.hip - 0.18 * crouch - swing - 0.32 * split + bob - 0.35 * dip + 0.5 * extend;
+      j.hipR.rotation.x = STANCE.hipR - 0.18 * crouch + swing + 0.32 * split + bob - 0.35 * dip + 0.35 * extend;
+      j.kneeL.rotation.x = STANCE.knee + 0.3 * crouch + Math.max(0, Math.cos(phase)) * lift - bob * 2 + 0.55 * dip - 0.7 * extend;
+      j.kneeR.rotation.x = STANCE.knee + 0.3 * crouch + Math.max(0, -Math.cos(phase)) * lift - bob * 2 + 0.55 * dip - 0.6 * extend;
+      j.ankleL.rotation.x = -0.32 + 0.6 * extend;
+      j.ankleR.rotation.x = -0.52 + 0.7 * extend;
+      j.spine.rotation.x = (0.28 + 0.1 * crouch + 0.08 * stride) * (1 - upright) + (0.04 + 0.12 * dip) * upright;
+      j.neck.rotation.x = -0.25 * (1 - upright) - 0.1 * upright;
 
       // Arms: a hand on the ball, the other one out guarding it.
       root.updateMatrixWorld(true);

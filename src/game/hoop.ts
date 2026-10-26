@@ -4,18 +4,19 @@ import {
   BACKBOARD_FROM_BASELINE,
   BACKBOARD_HEIGHT,
   BACKBOARD_WIDTH,
+  BOARD_THICKNESS,
   BOX_HEIGHT,
   BOX_WIDTH,
   COURT_HALF_LENGTH,
   HOOP_FROM_BASELINE,
+  NET_BOTTOM_RADIUS,
+  NET_LENGTH,
   RIM_HEIGHT,
   RIM_RADIUS,
   RIM_TUBE,
 } from "./dimensions";
 import { inked, toon } from "./toon";
 
-const NET_LENGTH = 0.45;
-const NET_BOTTOM_RADIUS = 0.13;
 const NET_LOOPS = 12;
 
 /**
@@ -26,7 +27,7 @@ export function createHoop(side: 1 | -1): THREE.Group {
   const hoop = new THREE.Group();
   hoop.name = side > 0 ? "hoop+x" : "hoop-x";
 
-  const boardThickness = 0.05;
+  const boardThickness = BOARD_THICKNESS;
   const faceX = -BACKBOARD_FROM_BASELINE; // board face, relative to baseline
   const rimX = -HOOP_FROM_BASELINE;
 
@@ -90,6 +91,7 @@ export function createHoop(side: 1 | -1): THREE.Group {
   return hoop;
 }
 
+/** Net hung from the rim; its origin is the rim centre so it can stretch when a ball goes through. */
 function createNet(rimX: number): THREE.LineSegments {
   const points: THREE.Vector3[] = [];
   const rows = 5;
@@ -97,7 +99,7 @@ function createNet(rimX: number): THREE.LineSegments {
     const t = row / rows;
     const r = THREE.MathUtils.lerp(RIM_RADIUS, NET_BOTTOM_RADIUS, t);
     const a = ((i + (row % 2) * 0.5) / NET_LOOPS) * Math.PI * 2;
-    return new THREE.Vector3(rimX + Math.cos(a) * r, RIM_HEIGHT - t * NET_LENGTH, Math.sin(a) * r);
+    return new THREE.Vector3(Math.cos(a) * r, -t * NET_LENGTH, Math.sin(a) * r);
   };
   for (let row = 0; row < rows; row++) {
     for (let i = 0; i < NET_LOOPS; i++) {
@@ -113,6 +115,7 @@ function createNet(rimX: number): THREE.LineSegments {
     new THREE.LineBasicMaterial({ color: 0xfaf8f2 }),
   );
   net.name = "net";
+  net.position.set(rimX, RIM_HEIGHT, 0);
   return net;
 }
 

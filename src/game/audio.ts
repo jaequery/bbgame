@@ -79,6 +79,92 @@ export function playSqueak(speed: number) {
   osc.stop(t + dur + 0.02);
 }
 
+/** Ball through the net: a soft brushed-noise "shhk" sweeping down. */
+export function playSwish() {
+  if (!ctx || !noise || ctx.state !== "running") return;
+  const t = ctx.currentTime;
+  const src = ctx.createBufferSource();
+  src.buffer = noise;
+  const bp = ctx.createBiquadFilter();
+  bp.type = "bandpass";
+  bp.Q.value = 1.2;
+  bp.frequency.setValueAtTime(5200, t);
+  bp.frequency.exponentialRampToValueAtTime(1800, t + 0.32);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(0.45, t + 0.04);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.38);
+  src.connect(bp).connect(g).connect(ctx.destination);
+  src.start(t, Math.random() * 0.5, 0.4);
+}
+
+/** Ball on the iron: inharmonic metallic partials ringing out over a click. */
+export function playRim(speed: number) {
+  if (!ctx || !noise || ctx.state !== "running") return;
+  const t = ctx.currentTime;
+  const k = Math.min(1, speed / 7);
+  const out = ctx.createGain();
+  out.gain.value = 0.08 + 0.32 * k;
+  out.connect(ctx.destination);
+  for (const [f, decay, level] of [
+    [612, 0.5, 1],
+    [1453, 0.32, 0.6],
+    [2387, 0.2, 0.45],
+    [3311, 0.12, 0.3],
+  ]) {
+    const osc = ctx.createOscillator();
+    osc.type = "triangle";
+    osc.frequency.value = f * (0.98 + Math.random() * 0.04);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(level, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + decay);
+    osc.connect(g).connect(out);
+    osc.start(t);
+    osc.stop(t + decay + 0.02);
+  }
+  const click = ctx.createBufferSource();
+  click.buffer = noise;
+  const hp = ctx.createBiquadFilter();
+  hp.type = "highpass";
+  hp.frequency.value = 2500;
+  const cg = ctx.createGain();
+  cg.gain.setValueAtTime(0.6, t);
+  cg.gain.exponentialRampToValueAtTime(0.001, t + 0.03);
+  click.connect(hp).connect(cg).connect(out);
+  click.start(t, Math.random() * 0.9, 0.04);
+}
+
+/** Ball off the glass: a dull low thud with a hollow box resonance. */
+export function playBoard(speed: number) {
+  if (!ctx || !noise || ctx.state !== "running") return;
+  const t = ctx.currentTime;
+  const k = Math.min(1, speed / 7);
+  const out = ctx.createGain();
+  out.gain.value = 0.2 + 0.55 * k;
+  out.connect(ctx.destination);
+  const body = ctx.createOscillator();
+  body.type = "sine";
+  body.frequency.setValueAtTime(130, t);
+  body.frequency.exponentialRampToValueAtTime(70, t + 0.15);
+  const bg = ctx.createGain();
+  bg.gain.setValueAtTime(1, t);
+  bg.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+  body.connect(bg).connect(out);
+  body.start(t);
+  body.stop(t + 0.25);
+  const knock = ctx.createBufferSource();
+  knock.buffer = noise;
+  const bp = ctx.createBiquadFilter();
+  bp.type = "bandpass";
+  bp.frequency.value = 420;
+  bp.Q.value = 3;
+  const kg = ctx.createGain();
+  kg.gain.setValueAtTime(0.9, t);
+  kg.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+  knock.connect(bp).connect(kg).connect(out);
+  knock.start(t, Math.random() * 0.8, 0.14);
+}
+
 export function disposeAudio() {
   void ctx?.close();
   ctx = null;

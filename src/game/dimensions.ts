@@ -20,6 +20,9 @@ export const BACKBOARD_FROM_BASELINE = 4 * FT; // board face
 export const BACKBOARD_WIDTH = 6 * FT;
 export const BACKBOARD_HEIGHT = 3.5 * FT;
 export const BACKBOARD_BOTTOM = RIM_HEIGHT - 0.5 * FT;
+export const BOARD_THICKNESS = 0.05;
+export const NET_LENGTH = 0.45;
+export const NET_BOTTOM_RADIUS = 0.13;
 export const BOX_WIDTH = 24 * IN;
 export const BOX_HEIGHT = 18 * IN;
 
@@ -55,6 +58,10 @@ export const BALL_RESTITUTION = 0.78; // floor bounce, hardwood
 export const BALL_WALL_RESTITUTION = 0.6;
 export const BALL_FLOOR_FRICTION = 0.35; // Coulomb μ at the contact patch
 export const BALL_ROLLING_DECEL = 0.45; // m/s² rolling resistance once it stops bouncing
+export const RIM_RESTITUTION = 0.55; // steel rim on a breakaway mount
+export const RIM_FRICTION = 0.4;
+export const BOARD_RESTITUTION = 0.62; // tempered glass
+export const BOARD_FRICTION = 0.3;
 
 // Where the player may walk (and where a loose ball is kept): the gym floor in
 // front of the bleachers, short of the walls.

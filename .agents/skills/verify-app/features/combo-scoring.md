@@ -17,6 +17,9 @@
   `base × combo × 0.5^repeats`. A **sloppy** catch (early/late, outside `cleanWindow`) scores
   half and doesn't raise it.
 - Losing the ball, or 4 s without a move, resets combo to 0 and clears the chain.
+- A made jumper cashes the combo in: `comboPoints × 2` (× 3 for a 3) on top of the shot's
+  base; any shot ends the combo, and the timeout is paused while the shot is up. See
+  [jumper.md](jumper.md).
 
 ## Drive
 

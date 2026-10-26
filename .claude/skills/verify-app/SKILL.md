@@ -65,6 +65,7 @@ bash scripts/verify/doctor.sh            # node, deps, .env, docker, compose sta
   window.__game.player                    // { position, facing, velocity, speed, sprinting }
   window.__game.ball                      // { position, velocity, spin, radius, held, state }
   window.__game.dribble / combo / hands   // see features/dribbling.md, combo-scoring.md
+  window.__game.shot / placePlayer(x, z)  // see features/jumper.md
   window.__game.camera                    // { view:"A"|"B"|"C", gliding, position, target, fov }
   window.__game.cycleView() / setView("A")
   ```
@@ -80,6 +81,8 @@ bash scripts/verify/doctor.sh            # node, deps, .env, docker, compose sta
   intermediate (non-cut) frames. Copy its pattern for new features.
 - **Dribbling driver:** `node scripts/verify/dribble.mjs [--url …] [--out artifacts] [--frames all]` —
   every move in B/A/C, walk, loose ball, floor bounds; writes `dribble-report.json` + `moves/`.
+- **Jumper driver:** `node scripts/verify/jumper.mjs [--url …] [--out artifacts]` — combo → perfect
+  jumper, early and late bricks, from mid-range and beyond the arc; writes `jumper-report.json` + `jumper/`.
 
 ## Evidence
 
@@ -110,7 +113,7 @@ One file per top feature — how to drive it and what "working" looks like:
 | Camera views (B/A/C + glide) | [features/camera-views.md](features/camera-views.md) | built |
 | Dribbling (J/L/I/K/, moves) | [features/dribbling.md](features/dribbling.md) | built |
 | Combo scoring | [features/combo-scoring.md](features/combo-scoring.md) | built |
-| Jumper (Space) | [features/jumper.md](features/jumper.md) | stub — BBGA-EY71E4 |
+| Jumper (Space) | [features/jumper.md](features/jumper.md) | built |
 | Sessions + leaderboard | [features/leaderboard.md](features/leaderboard.md) | stub — BBGA-6MLO1I |
 
 When you build one of the stubs, replace its file with real drive steps and extend
