@@ -237,7 +237,111 @@
   font-size: 11px;
 }
 
+/* Jagged manga burst naming the move. */
+.callout {
+  position: absolute;
+  top: 13%;
+  left: 50%;
+  display: grid;
+  justify-items: center;
+  padding: 26px 46px;
+  background: var(--paper);
+  filter: drop-shadow(6px 6px 0 var(--ink));
+  clip-path: polygon(
+    0% 18%, 9% 22%, 6% 0%, 22% 14%, 30% 2%, 38% 15%, 50% 0%, 58% 16%, 70% 3%, 75% 17%, 92% 4%, 90% 24%,
+    100% 26%, 93% 42%, 100% 56%, 91% 64%, 98% 84%, 80% 80%, 76% 100%, 62% 86%, 50% 99%, 42% 84%, 28% 98%,
+    24% 82%, 6% 96%, 9% 76%, 0% 66%, 8% 52%, 1% 36%, 9% 32%
+  );
+  animation: burst 0.9s cubic-bezier(0.2, 1.6, 0.4, 1) forwards;
+}
+
+.calloutText {
+  font-family: var(--font-display), Impact, sans-serif;
+  font-size: 46px;
+  line-height: 1;
+  font-style: italic;
+  letter-spacing: 0.02em;
+  color: var(--red);
+  -webkit-text-stroke: 2px var(--ink);
+  paint-order: stroke fill;
+  white-space: nowrap;
+}
+
+.calloutPoints {
+  font-family: var(--font-display), Impact, sans-serif;
+  font-size: 26px;
+  color: var(--ink);
+}
+
+.sloppy .calloutText {
+  color: #8a6a3a;
+}
+
+.lost {
+  background: var(--ink);
+}
+
+.lost .calloutText {
+  color: var(--paper);
+}
+
+@keyframes burst {
+  0% {
+    transform: translate(-50%, 0) scale(0.3) rotate(-8deg);
+    opacity: 0;
+  }
+  18% {
+    transform: translate(-50%, 0) scale(1.08) rotate(-3deg);
+    opacity: 1;
+  }
+  75% {
+    transform: translate(-50%, -6px) scale(1) rotate(-3deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -18px) scale(0.96) rotate(-3deg);
+    opacity: 0;
+  }
+}
+
+/* Katakana bounce SFX popping off the floor. */
+.sfx {
+  position: absolute;
+  font-family: var(--font-jp), sans-serif;
+  font-weight: 900;
+  line-height: 1;
+  color: var(--yellow);
+  -webkit-text-stroke: 2px var(--ink);
+  paint-order: stroke fill;
+  text-shadow: 3px 3px 0 var(--ink);
+  white-space: nowrap;
+  animation: pop 0.45s ease-out forwards;
+}
+
+@keyframes pop {
+  0% {
+    transform: translate(-30%, -40%) scale(0.5) rotate(-12deg);
+    opacity: 1;
+  }
+  35% {
+    transform: translate(-30%, -90%) scale(1.1) rotate(-8deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-30%, -150%) scale(1) rotate(-6deg);
+    opacity: 0;
+  }
+}
+
 @media (max-width: 720px) {
+  .callout {
+    padding: 16px 26px;
+  }
+
+  .calloutText {
+    font-size: 26px;
+  }
+
   .scoreCard {
     top: 16px;
     left: 16px;

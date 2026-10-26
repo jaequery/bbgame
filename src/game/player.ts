@@ -5,7 +5,7 @@ import { inked, toon } from "./toon";
 
 // Procedural toon humanoid: a joint hierarchy of Groups (a rig without skinning)
 // with capsule/box body parts hung off each joint. Built facing local +Z; the
-// player's right hand is on local −X. Later tickets animate `joints`.
+// player's right hand is on local −X. `animate` drives the joints procedurally.
 
 export type JointName =
   | "hips"
@@ -26,12 +26,33 @@ export type JointName =
   | "kneeR"
   | "ankleR";
 
+export type Side = "L" | "R";
+
+/** What the animation needs to know each frame. */
+export interface PoseFrame {
+  dt: number;
+  elapsed: number;
+  /** Ground speed (m/s) — drives the gait. */
+  speed: number;
+  /** Dribbling sinks the stance. */
+  dribbling: boolean;
+  /** Split stance, −1…1 (+ = left foot forward). */
+  split: number;
+  /** World wrist targets; null = that arm guards. */
+  hands: Record<Side, THREE.Vector3 | null>;
+}
+
 export interface Player {
   root: THREE.Group;
   joints: Record<JointName, THREE.Group>;
-  /** Advances the idle breathing bob. */
-  update(elapsed: number): void;
+  /** Poses legs (gait, crouch, split stance) and solves both arms onto their targets. */
+  animate(frame: PoseFrame): void;
+  /** Current wrist positions (world), after the last `animate`. */
+  wrist(side: Side, out: THREE.Vector3): THREE.Vector3;
 }
+
+/** Wrist sits this far above the ball centre when the palm is on top of it. */
+export const WRIST_ABOVE_BALL = BALL_RADIUS + 0.07 * PLAYER_SCALE;
 
 const SKIN = 0xb8794f;
 const JERSEY = 0xd2302a;
@@ -171,19 +192,95 @@ export function createPlayer(fonts: GameFonts): Player {
   const baseHipY = hips.position.y;
   hips.position.y -= box.min.y / PLAYER_SCALE;
 
+  const standY = baseHipY - box.min.y / PLAYER_SCALE;
+  const wrists: Record<Side, THREE.Vector3> = { L: new THREE.Vector3(), R: new THREE.Vector3() };
+  const guard = new THREE.Vector3();
+  let phase = 0;
+  let stride = 0; // 0…1, how much of the gait is showing
+  let crouch = 0;
+  let split = 0;
+  let ready = false;
+
   return {
     root,
     joints: j,
-    update(elapsed: number) {
-      // Breathing bob: knees flex a touch, chest rises.
-      const bob = Math.sin(elapsed * 2.4) * 0.012;
-      hips.position.y = baseHipY - box.min.y / PLAYER_SCALE + bob;
-      j.kneeL.rotation.x = STANCE.knee - bob * 2;
-      j.kneeR.rotation.x = STANCE.knee - bob * 2;
-      j.hipL.rotation.x = STANCE.hip + bob;
-      j.hipR.rotation.x = STANCE.hipR + bob;
+    animate(f: PoseFrame) {
+      const k = (rate: number) => 1 - Math.exp(-f.dt * rate);
+      stride += (Math.min(1, f.speed / 3.5) - stride) * k(10);
+      crouch += ((f.dribbling ? 1 : 0) - crouch) * k(6);
+      split += (f.split - split) * k(14);
+      // One full gait cycle every ~1.5 m.
+      phase += (f.speed * f.dt * Math.PI * 2) / 1.5;
+
+      // Legs: the low stance, a gait swing, the split for between-the-legs.
+      const bob = Math.sin(f.elapsed * 2.4) * 0.012 * (1 - stride);
+      const swing = Math.sin(phase) * 0.55 * stride;
+      const lift = 0.9 * stride;
+      const sink = 0.07 * crouch;
+      hips.position.y = standY + bob - sink - Math.abs(Math.cos(phase)) * 0.035 * stride;
+      j.hipL.rotation.x = STANCE.hip - 0.18 * crouch - swing - 0.32 * split + bob;
+      j.hipR.rotation.x = STANCE.hipR - 0.18 * crouch + swing + 0.32 * split + bob;
+      j.kneeL.rotation.x = STANCE.knee + 0.3 * crouch + Math.max(0, Math.cos(phase)) * lift - bob * 2;
+      j.kneeR.rotation.x = STANCE.knee + 0.3 * crouch + Math.max(0, -Math.cos(phase)) * lift - bob * 2;
+      j.spine.rotation.x = 0.28 + 0.1 * crouch + 0.08 * stride;
+
+      // Arms: a hand on the ball, the other one out guarding it.
+      root.updateMatrixWorld(true);
+      for (const side of ["L", "R"] as const) {
+        const sx = side === "L" ? 1 : -1;
+        const want = f.hands[side] ?? root.localToWorld(guard.set(sx * 0.4, 1.06, 0.36).divideScalar(PLAYER_SCALE));
+        if (!ready) wrists[side].copy(want);
+        else wrists[side].lerp(want, k(f.hands[side] ? 40 : 12));
+        solveArm(j[`shoulder${side}`], j[`elbow${side}`], wrists[side], sx);
+        j[`hand${side}`].rotation.set(-0.35, 0, 0);
+      }
+      ready = true;
+    },
+    wrist(side, out) {
+      return out.copy(wrists[side]);
     },
   };
+}
+
+const _inv = new THREE.Matrix4();
+const _basis = new THREE.Matrix4();
+const _t = new THREE.Vector3();
+const _pole = new THREE.Vector3();
+const _upper = new THREE.Vector3();
+const _fore = new THREE.Vector3();
+const _x = new THREE.Vector3();
+const _y = new THREE.Vector3();
+const _z = new THREE.Vector3();
+
+/**
+ * Two-bone IK: turns the shoulder and bends the elbow so the wrist lands on
+ * `target` (world), elbow pointing out and back. Solved in the chest's space.
+ */
+function solveArm(shoulder: THREE.Group, elbow: THREE.Group, target: THREE.Vector3, sx: number) {
+  const parent = shoulder.parent!;
+  parent.updateWorldMatrix(true, false);
+  _inv.copy(parent.matrixWorld).invert();
+  const t = _t.copy(target).applyMatrix4(_inv).sub(shoulder.position);
+  const U = UPPER_ARM;
+  const F = FOREARM;
+  const dist = THREE.MathUtils.clamp(t.length(), Math.abs(U - F) + 0.02, (U + F) * 0.999);
+  const dir = t.normalize();
+  const a = Math.acos(THREE.MathUtils.clamp((U * U + dist * dist - F * F) / (2 * U * dist), -1, 1));
+  // Elbow pole: out to the side, back and a little down.
+  const pole = _pole.set(sx * 0.8, -0.4, -0.7);
+  pole.addScaledVector(dir, -pole.dot(dir));
+  if (pole.lengthSq() < 1e-6) pole.set(sx, 0, 0);
+  pole.normalize();
+  const upper = _upper.copy(dir).multiplyScalar(Math.cos(a)).addScaledVector(pole, Math.sin(a));
+  const fore = _fore.copy(dir).multiplyScalar(dist).addScaledVector(upper, -U).normalize();
+  // Shoulder frame: local −Y along the upper arm, +Z the way the forearm bends.
+  _y.copy(upper).negate();
+  _z.copy(fore).addScaledVector(upper, -fore.dot(upper));
+  if (_z.lengthSq() < 1e-8) _z.copy(pole).negate();
+  _z.normalize();
+  _x.crossVectors(_y, _z);
+  shoulder.quaternion.setFromRotationMatrix(_basis.makeBasis(_x, _y, _z));
+  elbow.rotation.set(-Math.acos(THREE.MathUtils.clamp(upper.dot(fore), -1, 1)), 0, 0);
 }
 
 const STANCE = { hip: -0.62, hipR: -0.42, knee: 0.95 };
@@ -214,15 +311,6 @@ function poseAthleticStance(j: Record<JointName, THREE.Group>) {
   j.shoulderL.rotation.set(-0.45, 0, 0.55);
   j.elbowL.rotation.set(-0.85, 0, -0.2);
   j.handL.rotation.x = -0.2;
-}
-
-/** Ball resting under the player's right palm, in world space. */
-export function heldBallPosition(player: Player, out: THREE.Vector3): THREE.Vector3 {
-  const palm = player.joints.handR.getObjectByName("palmR")!;
-  palm.updateWorldMatrix(true, false);
-  palm.getWorldPosition(out);
-  out.y -= BALL_RADIUS * 0.95;
-  return out;
 }
 
 function capsule(radius: number, length: number): THREE.BufferGeometry {

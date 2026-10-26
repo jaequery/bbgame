@@ -45,8 +45,9 @@ export function poseFor(view: ViewId, s: Subject, out: CameraPose): CameraPose {
     }
     case "C": {
       // Sideline broadcast: tracks the player horizontally, looks across the court.
+      // Backs off with the player past the near sideline (the near wall is single-sided).
       const x = THREE.MathUtils.clamp(s.position.x, -HOOP_X, HOOP_X);
-      out.position.set(x, 2.9, 8.4);
+      out.position.set(x, 2.9, Math.max(8.4, s.position.z + 5.2));
       out.target.set(x + 0.9, 1.2, s.position.z - 2);
       out.fov = 42;
       break;

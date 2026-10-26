@@ -47,3 +47,18 @@ export const HOOP_X = COURT_HALF_LENGTH - HOOP_FROM_BASELINE;
 
 // Player is drawn ~8% larger than life (NBA Jam style); ball and court stay real.
 export const PLAYER_SCALE = 1.08;
+
+// Ball physics (regulation size 7, inflated to spec, on hardwood).
+export const GRAVITY = 9.81;
+export const BALL_MASS = 0.62; // kg
+export const BALL_RESTITUTION = 0.78; // floor bounce, hardwood
+export const BALL_WALL_RESTITUTION = 0.6;
+export const BALL_FLOOR_FRICTION = 0.35; // Coulomb μ at the contact patch
+export const BALL_ROLLING_DECEL = 0.45; // m/s² rolling resistance once it stops bouncing
+
+// Where the player may walk (and where a loose ball is kept): the gym floor in
+// front of the bleachers, short of the walls.
+export const FLOOR_MIN_X = GYM_MIN_X + 0.6;
+export const FLOOR_MAX_X = GYM_MAX_X - 0.6;
+export const FLOOR_MIN_Z = -COURT_HALF_WIDTH - 1.1;
+export const FLOOR_MAX_Z = GYM_MAX_Z - 0.6;

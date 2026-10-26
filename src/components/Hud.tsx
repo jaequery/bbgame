@@ -12,6 +12,7 @@ const CONTROLS: [string, string][] = [
   [",", "Behind back"],
   ["SPACE", "Shoot"],
   ["WASD", "Move"],
+  ["SHIFT", "Sprint"],
   ["V", "View"],
 ];
 
@@ -47,6 +48,34 @@ export default function Hud() {
           ))}
         </ol>
       </section>
+
+      {hud.callout && (
+        <div
+          key={`callout-${hud.callout.id}`}
+          className={`${styles.callout} ${styles[hud.callout.tone] ?? ""}`}
+          data-testid="hud-callout"
+          aria-live="polite"
+        >
+          <span className={styles.calloutText}>{hud.callout.text}</span>
+          {hud.callout.points > 0 && <span className={styles.calloutPoints}>+{fmt.format(hud.callout.points)}</span>}
+        </div>
+      )}
+
+      {hud.sfx && (
+        <span
+          key={`sfx-${hud.sfx.id}`}
+          className={styles.sfx}
+          data-testid="hud-sfx"
+          aria-hidden
+          style={{
+            left: `${hud.sfx.x * 100}%`,
+            top: `${hud.sfx.y * 100}%`,
+            fontSize: `${22 + 22 * hud.sfx.strength}px`,
+          }}
+        >
+          {hud.sfx.text}
+        </span>
+      )}
 
       <header className={styles.title}>
         <span className={styles.titleJp}>ドリブル道場</span>

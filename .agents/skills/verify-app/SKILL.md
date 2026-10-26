@@ -62,8 +62,9 @@ bash scripts/verify/doctor.sh            # node, deps, .env, docker, compose sta
   window.__game.frames                    // frames rendered (>0 = canvas live)
   window.__game.world                     // courtLength 28.65, courtWidth 15.24, rimHeight 3.048,
                                           // ballRadius, ballCircumference 0.749 (metres)
-  window.__game.player                    // { position:[x,y,z], facing:[x,y,z] }
-  window.__game.ball                      // { position, radius, held }
+  window.__game.player                    // { position, facing, velocity, speed, sprinting }
+  window.__game.ball                      // { position, velocity, spin, radius, held, state }
+  window.__game.dribble / combo / hands   // see features/dribbling.md, combo-scoring.md
   window.__game.camera                    // { view:"A"|"B"|"C", gliding, position, target, fov }
   window.__game.cycleView() / setView("A")
   ```
@@ -77,6 +78,8 @@ bash scripts/verify/doctor.sh            # node, deps, .env, docker, compose sta
   each view (`view-B.png`, `view-A.png`, `view-C.png`), presses V three times sampling the camera
   mid-glide, writes `drive-report.json`, exits 0 only if the view order is B → A → C → B with
   intermediate (non-cut) frames. Copy its pattern for new features.
+- **Dribbling driver:** `node scripts/verify/dribble.mjs [--url …] [--out artifacts] [--frames all]` —
+  every move in B/A/C, walk, loose ball, floor bounds; writes `dribble-report.json` + `moves/`.
 
 ## Evidence
 
@@ -105,8 +108,8 @@ One file per top feature — how to drive it and what "working" looks like:
 | Feature | File | Status |
 |---|---|---|
 | Camera views (B/A/C + glide) | [features/camera-views.md](features/camera-views.md) | built |
-| Dribbling (J/L/I/K/, moves) | [features/dribbling.md](features/dribbling.md) | stub — BBGA-EQIU6D |
-| Combo scoring | [features/combo-scoring.md](features/combo-scoring.md) | stub — BBGA-EQIU6D |
+| Dribbling (J/L/I/K/, moves) | [features/dribbling.md](features/dribbling.md) | built |
+| Combo scoring | [features/combo-scoring.md](features/combo-scoring.md) | built |
 | Jumper (Space) | [features/jumper.md](features/jumper.md) | stub — BBGA-EY71E4 |
 | Sessions + leaderboard | [features/leaderboard.md](features/leaderboard.md) | stub — BBGA-6MLO1I |
 
