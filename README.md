@@ -42,6 +42,7 @@ The rate limit is in-memory, so it applies per function instance.
 | I | High path (crossover `L,I,J` / `J,I,L`) · alone: high dribble |
 | K | Between the legs (`L,K,J` / `J,K,L`) |
 | , | Behind the back (`J,,,L` / `L,,,J`) |
+| E | Pass to your teammate (2v2 only) |
 | Space | Jumper — hold to rise, release at the top |
 | V | Cycle camera: **B** behind-shoulder → **A** isometric → **C** broadcast |
 | Esc | Back to the title (abandons a Session without saving) |
