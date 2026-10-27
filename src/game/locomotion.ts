@@ -18,7 +18,7 @@ export const MOVE = {
   /** Any dribble key press squares the player up to the hoop for this long (s). */
   pressFaceHoopTime: 2,
   /** Distance (m) of the power dribble's forward dash. */
-  dashDistance: 2.4,
+  dashDistance: 1.2,
   /** Comma held this long (s) turns the player's back to the hoop. */
   backDownDelay: 0.25,
   /** Speed multiplier while backing down. */
@@ -46,6 +46,8 @@ export class Locomotion {
   private faceHoopLeft = 0;
   /** Sideways slide (hold-cross): a velocity that dies away, covering `distance` in total. */
   private readonly slideVel = new THREE.Vector3();
+  /** The slide in progress is a power-dribble dash. */
+  private dashing = false;
   /** Spin move: a full turn about Y that comes back to the facing it started from. */
   private spinDir = 0;
   private spinLeft = 0;
@@ -87,6 +89,7 @@ export class Locomotion {
     this.position.addScaledVector(this.velocity, dt);
     this.position.addScaledVector(this.slideVel, dt);
     this.slideVel.multiplyScalar(Math.exp(-MOVE.slideRate * dt));
+    if (this.dashing && this.slideVel.length() < MOVE.dashDistance * MOVE.slideRate * 0.05) this.dashing = false;
     if (this.spinLeft > 0) {
       this.spinLeft = Math.max(0, this.spinLeft - dt);
       const u = 1 - this.spinLeft / this.spinTime;
@@ -149,6 +152,13 @@ export class Locomotion {
   /** Power dribble: a burst of `distance` metres along the floor direction `dir` (unit vector). */
   dash(dir: THREE.Vector3, distance = MOVE.dashDistance) {
     this.slide(dir, distance);
+    this.dashing = true;
+  }
+
+  /** 0…1 how far into a power-dribble lunge the body is (crouched, head down): full while the dash is quick, easing out as it dies away. */
+  get lunge() {
+    if (!this.dashing) return 0;
+    return Math.min(1, (this.slideVel.length() / (MOVE.dashDistance * MOVE.slideRate)) * 2);
   }
 
   /** Turns a full circle (+1 = to the player's left) over `time` seconds. */
@@ -175,6 +185,7 @@ export class Locomotion {
     this.position.copy(at);
     this.velocity.set(0, 0, 0);
     this.slideVel.set(0, 0, 0);
+    this.dashing = false;
     this.spinLeft = 0;
     this.spinAngle = 0;
     this.faceHoopLeft = 0;
