@@ -4,7 +4,7 @@ import { BallBody, planDribble, predictCatch, type BounceEvent } from "./ballPhy
 // Dribble controller: turns J / L / I / K / , / U / O presses into hand contacts
 // with a physically simulated ball. Dribbling is fully manual: the ball only
 // moves when a key says so. A caught ball rests in the hand until the next
-// press. Holding J / L palms the ball (after PALM_TIME it drops and bounces back
+// press (or dribbles itself once after IDLE_TIME). Holding J / L palms the ball (after PALM_TIME it drops and bounces back
 // by itself; releasing the key sooner dribbles it); the opposite hand key while
 // palming is a hold-cross. A key acts the moment it is pressed: in the air the
 // hand goes and gets the ball (the flight is cut short) and starts the move at
@@ -36,6 +36,8 @@ export const DRIBBLE = {
   sprintScatter: 0.45,
   /** Holding J / L palms the ball this long (s), then it is let go and drops. */
   palmTime: 3,
+  /** A ball left in the hand with no key pressed dribbles once after this long (s). */
+  idleTime: 3,
   /** The dropped ball peaks this far above the catch height (a lazy bounce). */
   dropApexMargin: 0.03,
   /** Hold-cross: the player slides this far (m) toward the receiving side. */
@@ -69,7 +71,7 @@ export const MOVE_NAMES: Record<MoveKind, string> = {
 
 const HAND_KEY: Record<Hand, DribbleKey> = { L: "J", R: "L" };
 const KEY_HAND: Partial<Record<DribbleKey, Hand>> = { J: "L", L: "R" };
-const PATH_MOVE: Record<string, MoveKind> = { I: "crossover", K: "between", ",": "behind", U: "spinL", O: "spinR" };
+const PATH_MOVE: Record<string, MoveKind> = { I: "crossover", K: "between", ",": "behind", U: "spinR", O: "spinL" };
 
 export interface Move {
   kind: MoveKind;
@@ -345,7 +347,9 @@ export class DribbleController {
         this.ball.carryTo(this.tmp, dt);
         if (Number.isNaN(this.caughtAt)) this.caughtAt = now;
         // Palmed too long: let it go and it drops back into the hand.
-        if (this.palmKey && now - this.palmAt >= DRIBBLE.palmTime) {
+        // Left alone just as long, the ball dribbles itself once.
+        const idle = !this.palmKey && now - this.caughtAt >= DRIBBLE.idleTime;
+        if ((this.palmKey && now - this.palmAt >= DRIBBLE.palmTime) || idle) {
           const hand = this.hand;
           this.palmKey = null;
           this.startMove({ kind: "pound", from: hand, to: hand, keys: [], timing: "clean", drop: true }, now);
@@ -428,7 +432,7 @@ export class DribbleController {
   private act(key: DribbleKey, now: number) {
     const from = this.hand;
     const keyHand = KEY_HAND[key];
-    const spin = key === "U" ? "L" : key === "O" ? "R" : null;
+    const spin = key === "U" ? "R" : key === "O" ? "L" : null;
     const to: Hand = keyHand ?? spin ?? (from === "L" ? "R" : "L");
     const kind: MoveKind = keyHand
       ? keyHand === from
