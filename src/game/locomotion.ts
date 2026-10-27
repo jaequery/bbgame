@@ -11,6 +11,10 @@ export const MOVE = {
   /** Decay rate (1/s) of a hold-cross slide. */
   slideRate: 7,
   turnRate: 9,
+  /** Turn rate (rad/s) while squaring up to the hoop for a crossover / between the legs / behind the back. */
+  faceHoopRate: 18,
+  /** A face-the-hoop move keeps the player squared up this long (s), counted from its last move. */
+  faceHoopTime: 0.75,
   /** A cut sharper than this (rad) at speed squeaks the sneakers. */
   squeakAngle: 1.7,
   squeakMinSpeed: 2.2,
@@ -30,6 +34,8 @@ export class Locomotion {
   yaw = Math.atan2(1, 0);
   sprinting = false;
   private squeakCooldown = 0;
+  /** Seconds left of squaring up to the hoop whatever the movement direction. */
+  private faceHoopLeft = 0;
   /** Sideways slide (hold-cross): a velocity that dies away, covering `distance` in total. */
   private readonly slideVel = new THREE.Vector3();
   /** Spin move: a full turn about Y that comes back to the facing it started from. */
@@ -87,11 +93,33 @@ export class Locomotion {
     clampAxis("z", FLOOR_MIN_Z + BODY_MARGIN, FLOOR_MAX_Z - BODY_MARGIN);
 
     // Face the way we're going; square up to the hoop when standing.
-    const target = moving ? Math.atan2(input.x, input.z) : Math.atan2(HOOP_X - p.x, -p.z);
+    this.faceHoopLeft = Math.max(0, this.faceHoopLeft - dt);
+    const target = moving && !this.facingHoop ? Math.atan2(input.x, input.z) : this.hoopYaw;
+    const rate = (this.facingHoop ? MOVE.faceHoopRate : MOVE.turnRate) * dt;
     let d = target - this.yaw;
     d = Math.atan2(Math.sin(d), Math.cos(d));
-    this.yaw += THREE.MathUtils.clamp(d, -MOVE.turnRate * dt, MOVE.turnRate * dt);
+    this.yaw += THREE.MathUtils.clamp(d, -rate, rate);
     this.facing.set(Math.sin(this.yaw), 0, Math.cos(this.yaw));
+  }
+
+  /** Squares up to the +X hoop for the duration of a move, turning smoothly, whichever way the player is moving. */
+  faceHoop() {
+    this.faceHoopLeft = MOVE.faceHoopTime;
+  }
+
+  /** A face-the-hoop move is under way. */
+  get facingHoop() {
+    return this.faceHoopLeft > 0;
+  }
+
+  /** Heading that squares the body up to the +X hoop from where it stands. */
+  get hoopYaw() {
+    return Math.atan2(HOOP_X - this.position.x, -this.position.z);
+  }
+
+  /** The heading the body is turning to / holding: the hoop during a face-the-hoop move, else the current one. */
+  get aimYaw() {
+    return this.facingHoop ? this.hoopYaw : this.yaw;
   }
 
   /** Slides sideways: `dir` is a unit floor vector, `distance` metres in total. */
@@ -125,6 +153,7 @@ export class Locomotion {
     this.slideVel.set(0, 0, 0);
     this.spinLeft = 0;
     this.spinAngle = 0;
+    this.faceHoopLeft = 0;
     this.yaw = Math.atan2(HOOP_X - at.x, -at.z);
     this.facing.set(Math.sin(this.yaw), 0, Math.cos(this.yaw));
   }

@@ -236,6 +236,9 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
     get yaw() {
       return body.renderYaw;
     },
+    get aimYaw() {
+      return body.aimYaw;
+    },
     get sprinting() {
       return body.sprinting;
     },
@@ -245,6 +248,8 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
     move: (m) => {
       combo.onMove(m, simTime);
       session.onMove(m);
+      // Crossovers (and hold-crosses), between the legs and behind the back are played facing the basket.
+      if (m.kind === "crossover" || m.kind === "between" || m.kind === "behind") body.faceHoop();
     },
     press: (key) => {
       // Instant feedback: the key lights up, the ball pops and the camera kicks on the press itself.
@@ -258,7 +263,8 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
     slide: (side) => {
       // The receiving hand's side is the player's local ±X.
       const x = side === "L" ? 1 : -1;
-      body.slide(slideDir.set(Math.cos(body.yaw) * x, 0, -Math.sin(body.yaw) * x), DRIBBLE.slideDistance);
+      const yaw = body.aimYaw;
+      body.slide(slideDir.set(Math.cos(yaw) * x, 0, -Math.sin(yaw) * x), DRIBBLE.slideDistance);
     },
     spin: (side, time) => body.spin(side === "L" ? 1 : -1, time),
     bounce: (e) => {
