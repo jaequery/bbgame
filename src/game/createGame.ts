@@ -95,6 +95,8 @@ export interface GameDebugHandle {
     /** The triple-threat hold (pump fake, hold, jab, reach), and how far the jab has stepped out (0…1). */
     inHold: boolean;
     jab: number;
+    /** 0…1 how far the head-down hunch over the ball (I in the hold) has come down. */
+    protect: number;
     /** Seconds to the jump's apex while rising with the ball (null otherwise). */
     apexIn: number | null;
     jumpHeight: number;
@@ -396,7 +398,7 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
   };
   void redrawWhenFontsLoad(fonts);
 
-  /** In the triple-threat hold J / K / L are moves out of it; the other dribble keys leave it and dribble. */
+  /** In the triple-threat hold I / J / K / L are moves out of it; the other dribble keys leave it and dribble. */
   const pressKey = (key: DribbleKey) => {
     if (shot.inHold) {
       const result = shot.holdKey(key, simTime);
@@ -539,7 +541,8 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
         else pressKey(key);
       }
       const dribbling = dribble.state !== "loose" && dribble.state !== "shot";
-      body.step(STEP, shot.feetLocked ? still : move, sprint, dribbling, squeak);
+      // In the triple-threat hold the feet stay planted but the body turns toward the way WASD points.
+      body.step(STEP, shot.feetLocked ? still : move, sprint, dribbling, squeak, shot.inHold ? move : undefined);
       dribble.update(simTime, STEP);
       shot.update(simTime);
       combo.update(simTime);
@@ -571,6 +574,7 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
             air: THREE.MathUtils.clamp(shot.jumpY / 0.15, 0, 1),
             lean: shot.lean * SHOT.fade.lean,
             jab: shot.jabAmount,
+            hunch: shot.protectAmount,
           }
         : undefined,
     });
@@ -654,6 +658,7 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
           phase: shot.phase,
           inHold: shot.inHold,
           jab: +shot.jabAmount.toFixed(3),
+          protect: +shot.protectAmount.toFixed(3),
           apexIn: apexIn === null ? null : +apexIn.toFixed(4),
           jumpHeight: +shot.jumpY.toFixed(3),
           fade: shot.fade,
