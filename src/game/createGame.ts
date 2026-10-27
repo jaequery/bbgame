@@ -178,9 +178,6 @@ declare global {
   }
 }
 
-/** Katakana pop at the ball for each dribble key, the moment it is pressed. */
-const PRESS_POPS: Record<DribbleKey, string> = { J: "パシッ", L: "パシッ", I: "シャッ", K: "ズバッ", ",": "ヒュッ", U: "クルッ", O: "クルッ" };
-
 const KEY_CODES: Record<string, DribbleKey> = {
   KeyJ: "J",
   KeyL: "L",
@@ -298,7 +295,6 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
     // Every dribble key press squares the player up to the basket and holds it for a couple of seconds.
     body.faceHoop(MOVE.pressFaceHoopTime);
     playPress(key);
-    pop(PRESS_POPS[key], dribble.ball.position, 1);
     rig.kick(key === "J" || key === "L" ? 0.5 : 1);
   };
   const dribble = new DribbleController(new BallBody(), bodyView, {
@@ -307,7 +303,6 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
       session.onMove(m);
       // Crossovers, between the legs and behind the back are played facing the basket.
       if (m.kind === "crossover") {
-        playSwish();
         // Fake toward the hand the ball leaves, then lunge the other way (the receiving hand's side).
         const x = m.from === "L" ? 1 : -1;
         const yaw = body.aimYaw;
@@ -327,7 +322,6 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
     spin: (side, time) => body.spin(side === "L" ? 1 : -1, time),
     bounce: (e) => {
       playBounce(e.speed);
-      if (e.speed >= 1) pop("ダムッ", e.position, e.speed / 6);
     },
   });
   const shot = new ShotController(dribble, bodyView, {
@@ -341,7 +335,6 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
       combo.onMove(m, simTime);
       if (m.kind === "pump") {
         playPress("I");
-        pop("ブンッ", dribble.ball.position, 0.8);
       }
     },
     release: (r) => {
@@ -357,7 +350,6 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
       if (r.finish === "dunk") {
         rimShakeAt = elapsed;
         playRim(4);
-        pop("ドガッ", dribble.ball.position, 1);
       }
     },
     result: (r) => {
