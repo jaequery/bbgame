@@ -98,7 +98,7 @@ export interface GameDebugHandle {
     /** Seconds to the jump's apex while rising with the ball (null otherwise). */
     apexIn: number | null;
     jumpHeight: number;
-    /** The jump is a fadeaway (F), and how far it has leaned back (0…1). */
+    /** The jump is a fadeaway (Space while moving away), and how far it has leaned back (0…1). */
     fade: boolean;
     lean: number;
     /** Horizontal distance from the player to the +X rim (m). */
@@ -239,6 +239,9 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
     get yaw() {
       return body.renderYaw;
     },
+    get aimYaw() {
+      return body.aimYaw;
+    },
     get sprinting() {
       return body.sprinting;
     },
@@ -255,6 +258,8 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
     move: (m) => {
       combo.onMove(m, simTime);
       session.onMove(m);
+      // Crossovers (and hold-crosses), between the legs and behind the back are played facing the basket.
+      if (m.kind === "crossover" || m.kind === "between" || m.kind === "behind") body.faceHoop();
     },
     press: (key) => pressFeedback(key),
     lost: () => combo.onLost(),
@@ -262,7 +267,8 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
     slide: (side) => {
       // The receiving hand's side is the player's local ±X.
       const x = side === "L" ? 1 : -1;
-      body.slide(slideDir.set(Math.cos(body.yaw) * x, 0, -Math.sin(body.yaw) * x), DRIBBLE.slideDistance);
+      const yaw = body.aimYaw;
+      body.slide(slideDir.set(Math.cos(yaw) * x, 0, -Math.sin(yaw) * x), DRIBBLE.slideDistance);
     },
     spin: (side, time) => body.spin(side === "L" ? 1 : -1, time),
     bounce: (e) => {
@@ -322,7 +328,7 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
 
   // Input: dribble keys are queued with their timestamps and applied in the
   // substep they happened in; WASD/Shift are held state.
-  const queue: { key: DribbleKey | "ShootDown" | "FadeDown" | "ShootUp"; t: number; up?: boolean }[] = [];
+  const queue: { key: DribbleKey | "ShootDown" | "ShootUp"; t: number; up?: boolean }[] = [];
   const held = new Set<string>();
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
@@ -335,13 +341,12 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
     unlockAudio();
     if (e.code === "KeyV") rig.cycle();
     if (e.code === "Space") queue.push({ key: "ShootDown", t: simAt(e.timeStamp / 1000) });
-    if (e.code === "KeyF") queue.push({ key: "FadeDown", t: simAt(e.timeStamp / 1000) });
     const key = KEY_CODES[e.code];
     if (key) queue.push({ key, t: simAt(e.timeStamp / 1000) });
   };
   const onKeyUp = (e: KeyboardEvent) => {
     held.delete(e.code);
-    if (e.code === "Space" || e.code === "KeyF") queue.push({ key: "ShootUp", t: simAt(e.timeStamp / 1000) });
+    if (e.code === "Space") queue.push({ key: "ShootUp", t: simAt(e.timeStamp / 1000) });
     const key = KEY_CODES[e.code];
     if (key) queue.push({ key, t: simAt(e.timeStamp / 1000), up: true });
   };
@@ -526,8 +531,7 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
       simTime += STEP;
       while (queue.length && queue[0].t <= simTime) {
         const { key, up } = queue.shift()!;
-        if (key === "ShootDown") shot.press(simTime);
-        else if (key === "FadeDown") shot.press(simTime, true);
+        if (key === "ShootDown") shot.press(simTime, move);
         else if (key === "ShootUp") shot.lift(simTime);
         else if (up) dribble.keyUp(key, simTime);
         else pressKey(key);

@@ -60,10 +60,10 @@ Full launch/verify procedure: `.claude/skills/verify-app/SKILL.md` (mirrored in 
 - **Debug handle:** `window.__game` (dev only) exposes `frames`, `world`, `player`, `ball`,
   `camera`, `cycleView()`, `setView()`, `shot`, `placePlayer()`, `setTimeScale()`. Extend it when you add game state that automation needs.
 - **Controls** (canonical): WASD move · J left hand · L right hand (tap = dribble, hold = palm the
-  ball, dropped after 1.5 s; opposite hand key while palming = hold-cross with a slide) ·
-  I crossover · K between legs · `,` behind back · U left spin · O right spin · Space jumper (hold, release at the top; a quick tap < `SHOT.tapTime` is a pump fake instead) · F fadeaway (jumper leaning away from the hoop, tighter timing window) ·
+  ball, dropped after 3 s; opposite hand key while palming = hold-cross with a slide) ·
+  I crossover · K between legs · `,` behind back · U right spin · O left spin · Space jumper (hold, release at the top; hold WASD pointing away from the hoop and it becomes a fadeaway: leans back, tighter timing window; a quick tap < `SHOT.tapTime` is a pump fake instead) ·
   triple-threat hold (after a pump fake; ball in both hands until you act): K jab step · J / L reach the ball out left / right (J/L mean reach here, not palm) · Space jumper or pump again · I `,` U O resume dribbling ·
-  V cycle camera (B → A → C). There is no auto-dribble: the ball only moves on a key press.
+  V cycle camera (B → A → C). A ball left untouched in the hand dribbles once after 3 s; otherwise it only moves on a key press.
 - Never commit `.env`; document new env vars in `.env.example`.
 - Next.js here is v16 with Cache Components on — read `node_modules/next/dist/docs/` before
   using an API you haven't checked. A route handler that must run per request calls

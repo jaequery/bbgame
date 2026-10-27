@@ -15,7 +15,7 @@ import type { HoopHit } from "./hoopPhysics";
 // ball out to that side (the hold owns J / L — no palming), Space shoots (or pumps again),
 // and I , U O resume dribbling.
 //
-// The jumper: hold Space (or F for the fadeaway, which leans away from the hoop) to gather the ball into both hands and rise, release
+// The jumper: hold Space (moving away from the hoop makes it a fadeaway, leaning back) to gather the ball into both hands and rise, release
 // at the top. The release only picks a launch velocity — where the ball goes
 // after that (swish, bank, rim out) is the ball physics against the hoop.
 
@@ -66,8 +66,10 @@ export const SHOT = {
   jabDistance: 0.32,
   /** Ball extension: arm out to the side and back over this long (s). */
   extTime: 0.5,
-  /** The fadeaway (F): the jumper while falling away from the hoop. */
+  /** The fadeaway (Space while moving away from the hoop): the jumper while falling away. */
   fade: {
+    /** Move input must point this closely away from the rim (cosine; 0.5 ≈ 60°). */
+    minAlign: 0.5,
     /** Backward travel away from the rim over the whole jump (m). */
     drift: 0.7,
     /** Body tilt back at the apex (rad, torso and ball path). */
@@ -109,7 +111,7 @@ export interface ShotRelease {
   speed: number;
   /** Space was held all the way down. */
   forced: boolean;
-  /** A fadeaway (F), not the standard jumper. */
+  /** A fadeaway (Space while moving away), not the standard jumper. */
   fade: boolean;
 }
 
@@ -274,19 +276,26 @@ export class ShotController {
     this.boardHits = 0;
   }
 
-  /** Space (or F, for the fadeaway) went down. */
-  press(now: number, fade = false) {
+  /** Space went down. Holding a move input that points away from the hoop makes it a fadeaway (and not a pump fake). */
+  press(now: number, move?: THREE.Vector3) {
     const fromHold = this.inHold;
     if (this.phase !== "none" && !fromHold) return;
     const s = this.dribble.state;
     if (!fromHold && (s === "loose" || s === "shot" || this.dribble.spinMoving)) return; // no jumper out of a spin
     this.spaceDown = true;
     this.pressAt = now;
-    this.fade = fade;
+    this.fade = move ? this.movingAway(move) : false;
     this.nextKey = null;
     if (fromHold) this.gather(now);
     else if (s === "flight") this.phase = "pickup";
     else this.gather(now);
+  }
+
+  /** The move input points away from the rim (within ~60° of directly away). */
+  private movingAway(move: THREE.Vector3) {
+    const away = this.tmp.set(this.body.position.x - RIM.x, 0, this.body.position.z - RIM.z);
+    if (move.lengthSq() < 0.01 || away.lengthSq() < 1e-6) return false;
+    return move.dot(away.normalize()) / move.length() > SHOT.fade.minAlign;
   }
 
   /** Space came up: the ball goes at the next substep (or as soon as the feet leave the floor); a quick tap is a pump fake instead. */

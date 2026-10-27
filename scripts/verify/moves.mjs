@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Drives the dribble controls with real key presses and reports the game state:
-// no auto-dribble, palm + 1.5 s release, hold-cross slide, U/O spins.
+// no auto-dribble, palm + 3 s release, hold-cross slide, U/O spins.
 //
 //   node scripts/verify/moves.mjs [--url http://localhost:3000] [--out artifacts] [--prefix after]
 
@@ -70,11 +70,11 @@ try {
   };
   await shot("idle");
 
-  // 2. Hold L (right hand): palm, then the ball is let go at 1.5 s and bounces back.
+  // 2. Hold L (right hand): palm, then the ball is let go at 3 s and bounces back.
   await page.keyboard.down("l");
   const palm = [];
   const t0 = Date.now();
-  while (Date.now() - t0 < 2400) {
+  while (Date.now() - t0 < 3900) {
     const s = await snap();
     palm.push({ at: +((Date.now() - t0) / 1000).toFixed(2), ball: s.dribble.state, y: s.ball.y, palm: s.dribble.palm, lastMove: s.dribble.lastMove });
     await page.waitForTimeout(100);
@@ -82,7 +82,7 @@ try {
   await page.keyboard.up("l");
   const left = palm.find((p) => p.ball !== "held");
   report.steps.palm = {
-    heldAtHalfSecond: palm.filter((p) => p.at < 1.3).every((p) => p.ball === "held" && p.palm),
+    heldAtHalfSecond: palm.filter((p) => p.at < 2.8).every((p) => p.ball === "held" && p.palm),
     ballLeftHandAt: left?.at ?? null,
     samples: palm,
   };
@@ -126,7 +126,7 @@ try {
   await page.waitForTimeout(800);
 
   // 5. Spins.
-  for (const [key, name] of [["u", "spinL"], ["o", "spinR"]]) {
+  for (const [key, name] of [["u", "spinR"], ["o", "spinL"]]) {
     await page.keyboard.press(key);
     const samples = [];
     for (let i = 0; i < 8; i++) {

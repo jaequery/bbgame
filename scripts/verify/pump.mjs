@@ -67,6 +67,7 @@ try {
 
   // 1. Tap Space → pump fake → hold, feet on the floor.
   const start = await snap();
+  await game(() => window.__game.setTimeScale(0.25)); // so the pump's top can be caught
   await page.keyboard.down("Space");
   await page.waitForTimeout(50);
   await page.keyboard.up("Space");
