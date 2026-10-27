@@ -18,6 +18,7 @@ const CONTROLS: [string, string][] = [
   ["PUMP+K", "Jab step"],
   ["PUMP+J/L", "Reach"],
   ["SPACE + AWAY", "Fadeaway"],
+  ["SPRINT + SPACE", "Layup / dunk"],
   ["WASD", "Move"],
   ["SHIFT", "Sprint"],
   ["V", "View"],

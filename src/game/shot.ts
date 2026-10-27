@@ -15,6 +15,10 @@ import type { HoopHit } from "./hoopPhysics";
 // ball out to that side (the hold owns J / L — no palming), Space shoots (or pumps again),
 // and I , U O resume dribbling.
 //
+// Running finishes: sprint at the hoop and press Space within range and it is not a pump fake or a
+// jumper but a layup (a running one-hand take-off, released at the top off the glass / rim) or, right
+// at the rim, a dunk (the ball is taken over the rim and slammed through).
+//
 // The jumper: hold Space (moving away from the hoop makes it a fadeaway, leaning back) to gather the ball into both hands and rise, release
 // at the top. The release only picks a launch velocity — where the ball goes
 // after that (swish, bank, rim out) is the ball physics against the hoop.
@@ -66,6 +70,31 @@ export const SHOT = {
   jabDistance: 0.32,
   /** Ball extension: arm out to the side and back over this long (s). */
   extTime: 0.5,
+  /** Running finishes: Space while sprinting at the hoop (see the header). */
+  finish: {
+    /** Ground speed to count as running (m/s): a sprint, a walk is not enough. */
+    minSpeed: 3.6,
+    /** Velocity must point this closely at the rim (cosine; 0.7 ≈ 45°). */
+    minAlign: 0.7,
+    /** Horizontal distance to the rim centre (m): layup inside `layupRange`, dunk inside `dunkRange`. */
+    layupRange: 3.6,
+    dunkRange: 1.9,
+    /** Vertical leap (m). */
+    layupJump: 0.7,
+    dunkJump: 0.95,
+    /** The take-off carries the player toward the rim: at most this far (m) for the layup… */
+    layupTravel: 1.6,
+    /** …closest he gets to the rim centre (m) at the top of the layup / the dunk. */
+    layupStandoff: 0.95,
+    dunkStandoff: 0.5,
+    /** Layup: launch angle (deg), aim past the rim centre (m) and random spread of the aim point (m). */
+    layupAngle: 62,
+    layupAim: 0.05,
+    layupScatter: 0.24,
+    /** Dunk: the ball is held this far above the rim centre (m) at the top, then slammed down at this speed (m/s). */
+    dunkAbove: 0.32,
+    dunkSlam: 5,
+  },
   /** The fadeaway (Space while moving away from the hoop): the jumper while falling away. */
   fade: {
     /** Move input must point this closely away from the rim (cosine; 0.5 ≈ 60°). */
@@ -81,7 +110,7 @@ export const SHOT = {
   },
 };
 
-export type ShotPhase = "none" | "pickup" | "gather" | "air" | "flight" | "rebound" | "pass" | "pump" | "hold" | "jab" | "ext";
+export type ShotPhase = "none" | "pickup" | "gather" | "air" | "rise" | "flight" | "rebound" | "pass" | "pump" | "hold" | "jab" | "ext";
 /** Moves out of the triple-threat hold. */
 export type HoldKind = "pump" | "jab" | "extL" | "extR";
 export const HOLD_NAMES: Record<HoldKind, string> = {
@@ -95,6 +124,8 @@ const HOLD_PHASES: ShotPhase[] = ["pump", "hold", "jab", "ext"];
 /** What a key did in the hold. */
 export type HoldResult = "move" | "exit" | "none";
 export type ReleaseGrade = "perfect" | "early" | "late";
+/** The running finishes. */
+export type FinishKind = "layup" | "dunk";
 export type ShotKind = "swish" | "bank" | "rim" | "rim-out" | "board" | "airball";
 
 export interface ShotRelease {
@@ -113,6 +144,8 @@ export interface ShotRelease {
   forced: boolean;
   /** A fadeaway (Space while moving away), not the standard jumper. */
   fade: boolean;
+  /** A running layup or dunk instead of a jumper. */
+  finish: FinishKind | null;
 }
 
 export interface ShotResult extends ShotRelease {
@@ -137,6 +170,9 @@ type V3 = [number, number, number];
 /** Chest pocket at the bottom of the dip, and the set point over the forehead (standing; local, x: + left). */
 const POCKET: V3 = [-0.04, 1.12, 0.32];
 const SET: V3 = [-0.06, 2.02, 0.2];
+/** Running finish: the ball in the shooting hand, reaching up and out toward the rim (layup) / over it (dunk). */
+const LAYUP_SET: V3 = [-0.12, 2.2, 0.5];
+const DUNK_SET: V3 = [-0.06, 2.3, 0.5];
 /** Triple threat: ball on the shooting side at the hip, in both hands; the top of a pump fake; and the ball reached out to the left (x: + left). */
 const HOLD: V3 = [-0.12, 0.92, 0.4];
 const PUMP_TOP: V3 = [-0.06, 1.75, 0.3];
@@ -148,8 +184,9 @@ const RIM = new THREE.Vector3(HOOP_X, RIM_HEIGHT, 0);
 const UP = THREE.Object3D.DEFAULT_UP;
 const smooth = (u: number) => u * u * (3 - 2 * u);
 
-/** Take-off speed for the jump height. */
-const LEAP = Math.sqrt(2 * GRAVITY * SHOT.jumpHeight);
+/** Take-off speed for a jump height. */
+const leapFor = (height: number) => Math.sqrt(2 * GRAVITY * height);
+const LEAP = leapFor(SHOT.jumpHeight);
 /** Feet off the floor for this long. */
 export const AIR_TIME = (2 * LEAP) / GRAVITY;
 
@@ -198,6 +235,8 @@ export class ShotController {
   attempts = 0;
   makes = 0;
 
+  /** The running finish in progress (null for the jumper and everything else). */
+  finish: FinishKind | null = null;
   /** The jump in progress is a fadeaway. */
   fade = false;
   /** 0…1 how far the fadeaway has leaned back (follows the jump). */
@@ -217,6 +256,10 @@ export class ShotController {
   private driftT = 0;
   private lastUpdate = 0;
   private airborne = false;
+  /** Take-off speed of the jump in progress. */
+  private leap = LEAP;
+  private readonly finishFrom = new THREE.Vector3();
+  private readonly finishTo = new THREE.Vector3();
   private gatherStart = 0;
   private readonly gatherFrom = new THREE.Vector3();
   private rimHits = 0;
@@ -237,7 +280,7 @@ export class ShotController {
 
   /** Both hands are on the ball (gathering or rising with it). */
   get holding() {
-    return this.phase === "gather" || this.phase === "air";
+    return this.phase === "gather" || this.phase === "air" || this.phase === "rise";
   }
 
   /** The triple-threat hold, including the pump fake, jab and reaches that return to it. */
@@ -252,7 +295,7 @@ export class ShotController {
 
   /** Seconds until the apex of the current jump (null when not rising with the ball). */
   apexIn(now: number): number | null {
-    return this.phase === "air" ? this.apexAt - now : null;
+    return this.phase === "air" || this.phase === "rise" ? this.apexAt - now : null;
   }
 
   /** Horizontal distance from the player to the rim centre (m). */
@@ -270,6 +313,7 @@ export class ShotController {
     this.jabApplied = 0;
     this.nextKey = null;
     this.fade = false;
+    this.finish = null;
     this.lean = 0;
     this.scored = false;
     this.rimHits = 0;
@@ -286,9 +330,25 @@ export class ShotController {
     this.pressAt = now;
     this.fade = move ? this.movingAway(move) : false;
     this.nextKey = null;
+    this.finish = null;
+    // Sprinting at the hoop within range wins over the pump fake and the jumper.
+    const finish = !fromHold && !this.fade ? this.finishKind() : null;
+    if (finish) return this.startFinish(now, finish);
     if (fromHold) this.gather(now);
     else if (s === "flight") this.phase = "pickup";
     else this.gather(now);
+  }
+
+  /** Running at the rim (fast enough, pointing at it) and close enough: which finish Space would be. */
+  finishKind(): FinishKind | null {
+    const F = SHOT.finish;
+    const v = this.body.velocity;
+    const speed = Math.hypot(v.x, v.z);
+    const distance = this.distanceToRim();
+    if (speed < F.minSpeed || distance > F.layupRange || distance < 1e-3) return null;
+    const toRim = (RIM.x - this.body.position.x) * v.x + (RIM.z - this.body.position.z) * v.z;
+    if (toRim / (speed * distance) < F.minAlign) return null;
+    return distance <= F.dunkRange ? "dunk" : "layup";
   }
 
   /** The move input points away from the rim (within ~60° of directly away). */
@@ -357,8 +417,8 @@ export class ShotController {
     this.now = now;
     if (this.airborne) {
       const t = now - this.liftAt;
-      this.jumpY = LEAP * t - 0.5 * GRAVITY * t * t;
-      if (this.jumpY <= 0) {
+      this.jumpY = this.leap * t - 0.5 * GRAVITY * t * t;
+      if (this.jumpY <= 0 && t > 0) {
         this.jumpY = 0;
         this.airborne = false;
       }
@@ -429,6 +489,7 @@ export class ShotController {
           this.airborne = true;
           this.liftAt = now;
           this.driftT = 0;
+          this.leap = LEAP;
           this.apexAt = now + LEAP / GRAVITY;
         }
         break;
@@ -441,6 +502,10 @@ export class ShotController {
         const falling = now > this.apexAt;
         if (!this.spaceDown) this.release(now, false);
         else if (falling && this.jumpY < SHOT.forcedReleaseHeight) this.release(now, true);
+        break;
+      }
+      case "rise": {
+        this.updateRise(now);
         break;
       }
       case "flight": {
@@ -477,6 +542,97 @@ export class ShotController {
     const next = this.nextKey;
     this.nextKey = null;
     if (next) this.startHoldMove(next, now);
+  }
+
+  /** Space while sprinting at the rim: no dip, the feet leave the floor now and carry on toward the basket. */
+  private startFinish(now: number, kind: FinishKind) {
+    const F = SHOT.finish;
+    this.dribble.surrender();
+    this.events.gather();
+    this.finish = kind;
+    this.phase = "rise";
+    this.airborne = true;
+    this.liftAt = now;
+    this.driftT = 0;
+    this.leap = leapFor(kind === "dunk" ? F.dunkJump : F.layupJump);
+    this.apexAt = now + this.leap / GRAVITY;
+    this.gatherFrom.copy(this.dribble.ball.position);
+    // Where the feet are at the top: toward the rim, stopping short of it by the stand-off.
+    const from = this.finishFrom.copy(this.body.position).setY(0);
+    const to = this.finishTo;
+    const dx = RIM.x - from.x;
+    const dz = RIM.z - from.z;
+    const d = Math.hypot(dx, dz);
+    const stop = kind === "dunk" ? F.dunkStandoff : Math.max(F.layupStandoff, d - F.layupTravel);
+    const travel = Math.max(0, d - stop);
+    to.set(from.x + (dx / d) * travel, 0, from.z + (dz / d) * travel);
+  }
+
+  /** The running take-off: glide toward the rim and carry the ball up; at the top, shoot the layup / slam the dunk. */
+  private updateRise(now: number) {
+    const F = SHOT.finish;
+    const ball = this.dribble.ball;
+    const rise = this.apexAt - this.liftAt;
+    const t = now - this.liftAt;
+    const u = THREE.MathUtils.clamp(t / rise, 0, 1);
+    // Momentum carries the body in, easing off as it reaches the top.
+    this.body.position.lerpVectors(this.finishFrom, this.finishTo, u * (2 - u));
+    const dunk = this.finish === "dunk";
+    const a = this.local(POCKET, this.jumpY, this.tmp);
+    const b = this.local(dunk ? DUNK_SET : LAYUP_SET, this.jumpY, this.tmp2);
+    const path = a.lerp(b, smooth(THREE.MathUtils.clamp(t / (rise * 0.8), 0, 1)));
+    if (dunk) {
+      // Over the last of the climb the hand takes the ball to just above the rim.
+      const over = smooth(THREE.MathUtils.clamp((u - 0.45) / 0.55, 0, 1));
+      path.lerp(this.tmp2.set(RIM.x, RIM.y + F.dunkAbove, RIM.z), over);
+    }
+    // The first few tenths of a second the ball comes up from where the hand had it.
+    const grab = smooth(THREE.MathUtils.clamp(t / 0.12, 0, 1));
+    ball.carryTo(path.lerpVectors(this.gatherFrom, path, grab), 1 / 240);
+    if (now >= this.apexAt) this.releaseFinish(now);
+  }
+
+  private releaseFinish(now: number) {
+    const F = SHOT.finish;
+    const ball = this.dribble.ball;
+    const dunk = this.finish === "dunk";
+    const from = ball.position;
+    const distance = Math.hypot(RIM.x - from.x, RIM.z - from.z);
+    const velocity = new THREE.Vector3();
+    let angle = 90;
+    let speed = F.dunkSlam;
+    if (dunk) {
+      velocity.set(0, -F.dunkSlam, 0);
+      ball.release(velocity);
+    } else {
+      const dir = this.tmp.set(RIM.x - from.x, 0, RIM.z - from.z).normalize();
+      const target = this.tmp2.copy(RIM).addScaledVector(dir, F.layupAim + (this.random() * 2 - 1) * F.layupScatter);
+      const side = (this.random() * 2 - 1) * F.layupScatter;
+      target.x += -dir.z * side;
+      target.z += dir.x * side;
+      const launch = solveLaunch(from, target, THREE.MathUtils.degToRad(F.layupAngle), velocity);
+      angle = THREE.MathUtils.radToDeg(launch.angle);
+      speed = launch.speed;
+      ball.release(velocity, new THREE.Vector3().crossVectors(dir, UP).multiplyScalar(SHOT.backspin * 0.5));
+    }
+    this.phase = "flight";
+    this.releasedAt = now;
+    this.rimHits = 0;
+    this.boardHits = 0;
+    this.scored = false;
+    this.lastRelease = {
+      grade: "perfect",
+      error: 0,
+      tolerance: 0,
+      distance: +distance.toFixed(3),
+      three: false,
+      angle: +angle.toFixed(2),
+      speed: +speed.toFixed(3),
+      forced: false,
+      fade: false,
+      finish: this.finish,
+    };
+    this.events.release(this.lastRelease);
   }
 
   private gather(now: number) {
@@ -531,6 +687,7 @@ export class ShotController {
       speed: +launch.speed.toFixed(3),
       forced,
       fade: this.fade,
+      finish: null,
     };
     this.events.release(this.lastRelease);
   }
