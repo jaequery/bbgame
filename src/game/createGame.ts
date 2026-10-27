@@ -25,7 +25,7 @@ import { hudStore, type HudState, type ViewId } from "./hudStore";
 import { Locomotion, MOVE } from "./locomotion";
 import { runControl, SessionClock, type PlayMode, type SessionResult } from "./session";
 import { createPlayer, WRIST_ABOVE_BALL, type Side } from "./player";
-import { AIR_TIME, SHOT, ShotController, type ShotPhase, type ShotRelease, type ShotResult } from "./shot";
+import { AIR_TIME, SHOT, ShotController, type FinishKind, type ShotPhase, type ShotRelease, type ShotResult } from "./shot";
 import { clearDrawnTextures, redrawWhenFontsLoad, type GameFonts } from "./textures";
 import { setOutlineResolution } from "./toon";
 
@@ -102,6 +102,8 @@ export interface GameDebugHandle {
     jumpHeight: number;
     /** The jump is a fadeaway (Space while moving away), and how far it has leaned back (0…1). */
     fade: boolean;
+    /** The running finish in progress: "layup" or "dunk" (null otherwise). */
+    finish: FinishKind | null;
     lean: number;
     /** Horizontal distance from the player to the +X rim (m). */
     distance: number;
@@ -198,6 +200,7 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
   hoops.forEach((h) => scene.add(h));
   const nets = hoops.map((h) => h.getObjectByName("net")!);
   const netKick = [-Infinity, -Infinity];
+  let rimShakeAt = -Infinity;
 
   const player = createPlayer(fonts);
   player.root.position.copy(PLAYER_START);
@@ -291,7 +294,14 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
         pop("ブンッ", dribble.ball.position, 0.8);
       }
     },
-    release: () => {},
+    release: (r) => {
+      // A dunk shakes the rim as the ball goes down through it.
+      if (r.finish === "dunk") {
+        rimShakeAt = elapsed;
+        playRim(4);
+        pop("ドガッ", dribble.ball.position, 1);
+      }
+    },
     result: (r) => combo.onShot(r, simTime),
   });
   dribble.ball.obstacles = hoops.map(
@@ -447,6 +457,13 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
       hands[shot.extSide] = onBall(shot.extSide);
       return;
     }
+    if (shot.phase === "rise") {
+      // Running finish: one hand takes the ball up, the other swings up for balance.
+      const floor = feet.set(body.position.x, shot.jumpY, body.position.z);
+      hands.R = onBall("R");
+      hands.L = offsetFrom(floor, 0.3, 1.9, 0.25, handTargets.L);
+      return;
+    }
     if (shot.holding || shot.inHold) {
       // Guide hand on the side of the ball, shooting hand under and behind it.
       hands.L = offsetFrom(b.position, 0.15, -0.02, -0.03, handTargets.L);
@@ -504,6 +521,9 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
 
   /** A basket stretches the net down and lets it spring back; a rim hit gives it a smaller shake. */
   const animateNets = () => {
+    // The +X rim rocks on its mount after a dunk.
+    const shake = elapsed - rimShakeAt;
+    hoops[0].rotation.z = shake >= 0 && shake < 1 ? 0.012 * Math.exp(-5 * shake) * Math.sin(34 * shake) : 0;
     nets.forEach((net, i) => {
       const t = elapsed - netKick[i];
       const s = t >= 0 && t < 1.5 ? 0.32 * Math.exp(-4.5 * t) * Math.cos(16 * t) : 0;
@@ -514,7 +534,8 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
   /** The shot meter rides beside the player's head while a jumper is up, then shows the grade. */
   const meterAt = new THREE.Vector3();
   const updateMeter = () => {
-    const show = shot.holding || simTime - shot.releasedAt < 0.9;
+    // The timing meter is for the jumper; a running finish has no release to time.
+    const show = !shot.finish && (shot.holding || simTime - shot.releasedAt < 0.9);
     if (!show) {
       if (hudStore.getSnapshot().meter) hudStore.set({ meter: null });
       return;
@@ -680,6 +701,7 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
           apexIn: apexIn === null ? null : +apexIn.toFixed(4),
           jumpHeight: +shot.jumpY.toFixed(3),
           fade: shot.fade,
+          finish: shot.finish,
           lean: +shot.lean.toFixed(3),
           distance: +shot.distanceToRim().toFixed(3),
           lastRelease: shot.lastRelease,

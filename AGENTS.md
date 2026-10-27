@@ -62,6 +62,7 @@ Full launch/verify procedure: `.claude/skills/verify-app/SKILL.md` (mirrored in 
 - **Controls** (canonical): WASD move · J left hand · L right hand (tap = dribble, hold = palm the
   ball, dropped after 3 s; tap one hand key twice then the other, J J L or L L J = crossover with a swish) ·
   I crossover · K between legs · `,` behind back (hold it: back down, back to the hoop) · U right spin · O left spin · Space jumper (hold, release at the top; hold WASD pointing away from the hoop and it becomes a fadeaway: leans back, tighter timing window; a quick tap < `SHOT.tapTime` is a pump fake instead) ·
+  sprint (Shift) at the hoop + Space = running finish, which beats the pump fake and the jumper: a layup within `SHOT.finish.layupRange` (running one-hand take-off, released at the top, can miss), a dunk within `SHOT.finish.dunkRange` (always scores) ·
   triple-threat hold (after a pump fake; ball in both hands until you act): WASD turns the player on the spot toward that direction · K jab step (hold it: the foot stays out) · J / L reach the ball out left / right (J/L mean reach here, not palm) · I hunch over the ball, head down, shielding it from the hoop (hold it) · I, K and a reach combine · Space jumper or pump again · `,` U O resume dribbling ·
   V cycle camera (B → A → C). A ball left untouched in the hand dribbles once after 3 s; otherwise it only moves on a key press.
 - Never commit `.env`; document new env vars in `.env.example`.
