@@ -49,7 +49,7 @@ export interface ComboSnapshot {
 /**
  * Combo scoring: the multiplier climbs one step for every clean move that is
  * different from the last one (variety + rhythm); repeating the same move keeps
- * it but scores less each time; sloppy timing scores half; losing the ball or
+ * it but scores less each time; sloppy timing scores half (and shows SLOPPY); losing the ball or
  * going quiet resets it. A made jumper cashes the combo in (its points × 2,
  * × 3 from beyond the arc); any shot ends the combo.
  */
@@ -92,7 +92,11 @@ export class ComboScorer {
     this.best = Math.max(this.best, this.score);
     this.chain = [...this.chain, ...move.keys].slice(-8);
     this.lastMove = { kind: move.kind, from: move.from, to: move.to, points, timing: move.timing };
-    this.publish({ text: MOVE_NAMES[move.kind], points, tone: move.timing === "clean" ? "move" : "sloppy" });
+    this.publish(
+      move.timing === "clean"
+        ? { text: MOVE_NAMES[move.kind], points, tone: "move" }
+        : { text: MOVE_NAMES[move.kind], points, tone: "sloppy", detail: "SLOPPY" },
+    );
   }
 
   onLost() {

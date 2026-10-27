@@ -81,6 +81,9 @@ bash scripts/verify/doctor.sh            # node, deps, .env, docker, compose sta
   intermediate (non-cut) frames. Copy its pattern for new features.
 - **Dribbling driver:** `node scripts/verify/dribble.mjs [--url …] [--out artifacts] [--frames all]` —
   every move in B/A/C, walk, loose ball, floor bounds; writes `dribble-report.json` + `moves/`.
+- **Auto-dribble driver:** `node scripts/verify/autodribble.mjs [--url …] [--out artifacts] [--seconds 30]` —
+  30 s idle (stand + walk) and 30 s mashing never loose, rhythm, clean moves, sprint-spam loss;
+  writes `autodribble-report.json` + `autodribble/`.
 - **Jumper driver:** `node scripts/verify/jumper.mjs [--url …] [--out artifacts]` — combo → perfect
   jumper, early and late bricks, from mid-range and beyond the arc; writes `jumper-report.json` + `jumper/`.
 

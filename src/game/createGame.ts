@@ -79,6 +79,8 @@ export interface GameDebugHandle {
     moves: number;
     lost: number;
     split: number;
+    /** Keys pressed while the ball was away, waiting for the next contact. */
+    queued: DribbleKey[];
   };
   combo: ComboSnapshot;
   hud: HudState;
@@ -503,6 +505,7 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
           moves: dribble.moves,
           lost: dribble.lost,
           split: dribble.split,
+          queued: dribble.queued,
         };
       },
       get combo() {

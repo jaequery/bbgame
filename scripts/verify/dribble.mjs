@@ -3,8 +3,8 @@
 // in each camera view (B, A, C) it performs every move — crossover, between the
 // legs and behind the back in both directions, the high dribble and the basic
 // switch — and checks the move, callout and score. Then it walks while
-// dribbling, lets the ball go loose and walks it down, and pushes the player
-// into the floor bounds. Screenshot sequences of each move go to <out>/moves/.
+// dribbling, loses the ball the only way left (sprinting while spamming sloppy
+// hand switches) and walks it down, and pushes the player into the floor bounds. Screenshot sequences of each move go to <out>/moves/.
 //
 //   node scripts/verify/dribble.mjs [--url http://localhost:3000] [--out artifacts] [--frames all|B]
 //
@@ -56,7 +56,7 @@ async function waitCatch() {
       return c !== null && c <= lead;
     },
     LEAD,
-    { polling: "raf", timeout: 5_000 },
+    { polling: 5, timeout: 5_000 }, // between frames: a caught ball leaves flight on the next frame
   );
 }
 
@@ -127,17 +127,11 @@ async function recover(timeoutMs = 12_000) {
   }
 }
 
-/** Gets the ball into a dribble: recover it if loose, push it if held. */
+/** Gets the ball into a dribble: recover it if loose, then let the auto-dribble push it. */
 async function ensureDribbling() {
-  let d = await dribbleState();
-  if (d.state === "loose") {
-    if (!(await recover())) throw new Error("could not recover the loose ball");
-    d = await dribbleState();
-  }
-  if (d.state === "held") {
-    await page.keyboard.press(handKey(d.hand));
-    await page.waitForFunction(() => window.__game.dribble.state === "flight", null, { timeout: 2_000 });
-  }
+  const d = await dribbleState();
+  if (d.state === "loose" && !(await recover())) throw new Error("could not recover the loose ball");
+  await page.waitForFunction(() => window.__game.dribble.state === "flight", null, { timeout: 2_000 });
 }
 
 const MOVE_PLAN = ["crossover", "crossover", "between", "between", "behind", "behind", "high", "switch"];
@@ -183,7 +177,13 @@ async function doMove(view, index, kind, frames) {
       c: window.__game.combo,
       callout: document.querySelector("[data-testid=hud-callout]")?.textContent ?? null,
     }));
-    if (after.d.state === "loose" || after.d.moves === before.d.moves) continue; // fumbled the catch: retry
+    if (after.d.state === "loose" || after.d.moves === before.d.moves) continue;
+    // Keys split across two contacts (a slow frame) read as another move, or the press missed
+    // the clean window: it used to cost the ball, now it only scores less — retry either way.
+    if (attempt < 3 && (after.d.lastMove?.kind !== kind || after.d.lastMove?.timing !== "clean")) {
+      await page.waitForTimeout(4_500); // combo cools off so the retry scores like a first try
+      continue;
+    }
     if (frames) {
       // Release, mid-flight (around the bounce), and the catch.
       await frozenShot(`${base}-1.png`);
@@ -288,11 +288,18 @@ try {
     if (view === "B") check("repeat-scores-less", xs.length === 2 && xs[1].points < xs[0].points, { points: xs.map((m) => m.points) });
   }
 
-  // Loose ball: stop pressing, the combo resets, the ball rolls away, walk onto it.
+  // Loose ball: sprint while spamming hand switches, the combo resets, the ball rolls away, walk onto it.
   await game(() => window.__game.setView("B"));
   await page.waitForFunction(() => !window.__game.camera.gliding, null, { timeout: 5_000 });
   await doMove("B", 90, "crossover", false);
   const comboBefore = (await comboState()).combo;
+  await page.keyboard.down("Shift");
+  await page.keyboard.down(await keyTowardCentre());
+  for (let i = 0; i < 80 && (await dribbleState()).state !== "loose"; i++) {
+    await page.keyboard.press(i % 2 ? "l" : "j");
+    await page.waitForTimeout(45);
+  }
+  for (const k of ["w", "a", "s", "d", "Shift"]) await page.keyboard.up(k);
   await page.waitForFunction(() => window.__game.dribble.state === "loose", null, { timeout: 3_000 });
   await page.waitForTimeout(150);
   const loose = await game(() => ({
@@ -305,7 +312,7 @@ try {
   const groundSpeed = Math.hypot(loose.ballVelocity[0], loose.ballVelocity[2]);
   const recovered = await recover();
   const afterRecover = await dribbleState();
-  check("loose-ball", comboBefore > 0 && loose.combo === 0 && loose.chain.length === 0 && groundSpeed > 0.2 && recovered && afterRecover.state === "held", {
+  check("loose-ball", comboBefore > 0 && loose.combo === 0 && loose.chain.length === 0 && groundSpeed > 0.2 && recovered && afterRecover.state !== "loose", {
     comboBefore,
     comboAfter: loose.combo,
     callout: loose.callout,
