@@ -38,6 +38,8 @@ export interface PoseFrame {
   dribbling: boolean;
   /** Split stance, −1…1 (+ = left foot forward). */
   split: number;
+  /** 0…1 palming the ball, hunched over it ready to cross over. */
+  palm?: number;
   /** World wrist targets; null = that arm guards. */
   hands: Record<Side, THREE.Vector3 | null>;
   /** Jump-shot pose: `dip` 0…1 knees loading before take-off, `air` 0…1 legs extended off the floor, `lean` torso tilt back (rad, fadeaway), `jab` 0…1 lead foot stepped out. */
@@ -206,6 +208,7 @@ export function createPlayer(fonts: GameFonts): Player {
   let lean = 0;
   let jab = 0;
   let upright = 0;
+  let palm = 0;
   let ready = false;
 
   return {
@@ -220,6 +223,7 @@ export function createPlayer(fonts: GameFonts): Player {
       air += ((f.shoot?.air ?? 0) - air) * k(16);
       lean += ((f.shoot?.lean ?? 0) - lean) * k(18);
       jab += ((f.shoot?.jab ?? 0) - jab) * k(30);
+      palm += ((f.palm ?? 0) - palm) * k(10);
       upright += ((f.shoot ? 1 : 0) - upright) * k(10);
       // One full gait cycle every ~1.5 m.
       phase += (f.speed * f.dt * Math.PI * 2) / 1.5;
@@ -228,7 +232,7 @@ export function createPlayer(fonts: GameFonts): Player {
       const bob = Math.sin(f.elapsed * 2.4) * 0.012 * (1 - stride);
       const swing = Math.sin(phase) * 0.55 * stride;
       const lift = 0.9 * stride;
-      const sink = 0.07 * crouch;
+      const sink = 0.07 * crouch + 0.03 * palm;
       // Jumper: knees load on the dip, then the legs straighten and the toes point in the air.
       const load = 0.12 * dip;
       const extend = air;
@@ -239,7 +243,7 @@ export function createPlayer(fonts: GameFonts): Player {
       j.kneeR.rotation.x = STANCE.knee + 0.3 * crouch + Math.max(0, -Math.cos(phase)) * lift - bob * 2 + 0.55 * dip - 0.6 * extend;
       j.ankleL.rotation.x = -0.32 + 0.6 * extend;
       j.ankleR.rotation.x = -0.52 + 0.7 * extend;
-      j.spine.rotation.x = (0.28 + 0.1 * crouch + 0.08 * stride) * (1 - upright) + (0.04 + 0.12 * dip) * upright - lean;
+      j.spine.rotation.x = (0.28 + 0.1 * crouch + 0.08 * stride + 0.14 * palm) * (1 - upright) + (0.04 + 0.12 * dip) * upright - lean;
       j.neck.rotation.x = -0.25 * (1 - upright) - 0.1 * upright;
 
       // Arms: a hand on the ball, the other one out guarding it.
