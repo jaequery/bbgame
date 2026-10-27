@@ -262,7 +262,8 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
     move: (m) => {
       combo.onMove(m, simTime);
       session.onMove(m);
-      // Crossovers (and hold-crosses), between the legs and behind the back are played facing the basket.
+      // Crossovers, between the legs and behind the back are played facing the basket.
+      if (m.kind === "crossover") playSwish();
       if (m.kind === "crossover" || m.kind === "between" || m.kind === "behind") body.faceHoop();
     },
     press: (key) => pressFeedback(key),
