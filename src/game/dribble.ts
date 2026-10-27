@@ -36,6 +36,8 @@ export const DRIBBLE = {
   sprintScatter: 0.45,
   /** Holding J / L palms the ball this long (s), then it is let go and drops. */
   palmTime: 3,
+  /** A palmed ball is held this much higher (m), cocked up ready to cross over. */
+  palmLift: 0.14,
   /** A ball left in the hand with no key pressed dribbles once after this long (s). */
   idleTime: 3,
   /** The dropped ball peaks this far above the catch height (a lazy bounce). */
@@ -202,6 +204,8 @@ export class DribbleController {
   /** The hand key being held down on the ball (palming), and the sim time it went down. */
   private palmKey: DribbleKey | null = null;
   private palmAt = 0;
+  /** 0…1 how far the palm pose has eased in (ball raised, player hunched). */
+  palmEase = 0;
   /** Sim time the hand took the ball (NaN = the next update). */
   private caughtAt = NaN;
   /** Presses made while the ball was away, applied at the next contact (err = press − ideal catch). */
@@ -340,6 +344,7 @@ export class DribbleController {
 
   update(now: number, dt: number) {
     this.ball.step(dt, (e) => this.events.bounce(e));
+    this.palmEase += ((this.palmKey && this.state === "held" ? 1 : 0) - this.palmEase) * (1 - Math.exp(-dt * 12));
     if (now > this.splitUntil) this.split = 0;
 
     switch (this.state) {
@@ -565,7 +570,7 @@ export class DribbleController {
 
   /** Where a held ball sits under the hand, between pushes. */
   private holdPoint(out: THREE.Vector3) {
-    const y = this.holdHeight + 0.06;
+    const y = this.holdHeight + 0.06 + DRIBBLE.palmLift * this.palmEase;
     return toWorld(anchor(this.hand, y), this.body.position, this.body.yaw, out);
   }
 
