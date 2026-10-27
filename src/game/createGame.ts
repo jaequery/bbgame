@@ -53,6 +53,9 @@ export interface GameDebugHandle {
   player: {
     position: [number, number, number];
     facing: [number, number, number];
+    /** Heading (rad), and the heading drawn including a spin move in progress. */
+    yaw: number;
+    renderYaw: number;
     velocity: [number, number, number];
     speed: number;
     sprinting: boolean;
@@ -73,6 +76,8 @@ export interface GameDebugHandle {
     /** Hand holding the ball, or the one it's flying to. */
     hand: Hand;
     heightMode: "low" | "high";
+    /** A hand key is held down on the ball. */
+    palm: boolean;
     /** Seconds until the ideal catch (null unless the ball is in the air). */
     catchIn: number | null;
     lastTiming: DribbleController["lastTiming"];
@@ -141,7 +146,7 @@ declare global {
 }
 
 /** Katakana pop at the ball for each dribble key, the moment it is pressed. */
-const PRESS_POPS: Record<DribbleKey, string> = { J: "パシッ", L: "パシッ", I: "シャッ", K: "ズバッ", ",": "ヒュッ" };
+const PRESS_POPS: Record<DribbleKey, string> = { J: "パシッ", L: "パシッ", I: "シャッ", K: "ズバッ", ",": "ヒュッ", U: "クルッ", O: "クルッ" };
 
 const KEY_CODES: Record<string, DribbleKey> = {
   KeyJ: "J",
@@ -149,6 +154,8 @@ const KEY_CODES: Record<string, DribbleKey> = {
   KeyI: "I",
   KeyK: "K",
   Comma: ",",
+  KeyU: "U",
+  KeyO: "O",
 };
 
 /** Physics and input run in fixed substeps so timing doesn't depend on frame rate. */
@@ -216,16 +223,21 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
       sfx: { id: ++sfxId, text, x: (projected.x + 1) / 2, y: (1 - projected.y) / 2, strength: Math.min(1, strength) },
     });
   };
+  const bodyVelocity = new THREE.Vector3();
   const bodyView = {
     position: body.position,
-    velocity: body.velocity,
+    // Counts a hold-cross slide that is still running, so the catch is aimed where the hand will be.
+    get velocity() {
+      return body.expectedVelocity(0.4, bodyVelocity);
+    },
     get yaw() {
-      return body.yaw;
+      return body.renderYaw;
     },
     get sprinting() {
       return body.sprinting;
     },
   };
+  const slideDir = new THREE.Vector3();
   const dribble = new DribbleController(new BallBody(), bodyView, {
     move: (m) => {
       combo.onMove(m, simTime);
@@ -240,6 +252,12 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
     },
     lost: () => combo.onLost(),
     pickup: () => {},
+    slide: (side) => {
+      // The receiving hand's side is the player's local ±X.
+      const x = side === "L" ? 1 : -1;
+      body.slide(slideDir.set(Math.cos(body.yaw) * x, 0, -Math.sin(body.yaw) * x), DRIBBLE.slideDistance);
+    },
+    spin: (side, time) => body.spin(side === "L" ? 1 : -1, time),
     bounce: (e) => {
       playBounce(e.speed);
       if (e.speed >= 1) pop("ダムッ", e.position, e.speed / 6);
@@ -289,7 +307,7 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
 
   // Input: dribble keys are queued with their timestamps and applied in the
   // substep they happened in; WASD/Shift are held state.
-  const queue: { key: DribbleKey | "ShootDown" | "ShootUp"; t: number }[] = [];
+  const queue: { key: DribbleKey | "ShootDown" | "ShootUp"; t: number; up?: boolean }[] = [];
   const held = new Set<string>();
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
@@ -308,8 +326,14 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
   const onKeyUp = (e: KeyboardEvent) => {
     held.delete(e.code);
     if (e.code === "Space") queue.push({ key: "ShootUp", t: simAt(e.timeStamp / 1000) });
+    const key = KEY_CODES[e.code];
+    if (key) queue.push({ key, t: simAt(e.timeStamp / 1000), up: true });
   };
-  const onBlur = () => held.clear();
+  const onBlur = () => {
+    held.clear();
+    // A palmed ball can't stay palmed by a key nobody can release any more.
+    for (const key of ["J", "L"] as const) queue.push({ key, t: simAt(performance.now() / 1000), up: true });
+  };
   window.addEventListener("keydown", onKeyDown);
   window.addEventListener("keyup", onKeyUp);
   window.addEventListener("blur", onBlur);
@@ -471,9 +495,10 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
     while (simTime + STEP <= now) {
       simTime += STEP;
       while (queue.length && queue[0].t <= simTime) {
-        const { key } = queue.shift()!;
+        const { key, up } = queue.shift()!;
         if (key === "ShootDown") shot.press(simTime);
         else if (key === "ShootUp") shot.lift();
+        else if (up) dribble.keyUp(key, simTime);
         else dribble.press(key, simTime);
       }
       const dribbling = dribble.state !== "loose" && dribble.state !== "shot";
@@ -485,7 +510,7 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
     tickSession();
 
     player.root.position.y = shot.jumpY;
-    player.root.rotation.y = body.yaw;
+    player.root.rotation.y = body.renderYaw;
     subject.position.set(body.position.x, 0, body.position.z);
     // View B's heading follows the player only when idle or heading away from the
     // camera; strafing and backpedalling keep it steady so WASD paths stay straight.
@@ -536,6 +561,8 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
         return {
           position: tuple(player.root.position),
           facing: tuple(body.facing),
+          yaw: +body.yaw.toFixed(4),
+          renderYaw: +body.renderYaw.toFixed(4),
           velocity: tuple(body.velocity),
           speed: +body.speed.toFixed(3),
           sprinting: body.sprinting,
@@ -562,6 +589,7 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
           state: dribble.state,
           hand: dribble.hand,
           heightMode: dribble.heightMode,
+          palm: dribble.palming,
           catchIn: catchIn === null ? null : +catchIn.toFixed(4),
           lastTiming: dribble.lastTiming,
           lastMove: dribble.lastMove,

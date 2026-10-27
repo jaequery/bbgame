@@ -203,7 +203,7 @@ export class ShotController {
   press(now: number) {
     if (this.phase !== "none") return;
     const s = this.dribble.state;
-    if (s === "loose" || s === "shot") return;
+    if (s === "loose" || s === "shot" || this.dribble.spinMoving) return; // no jumper out of a spin
     this.spaceDown = true;
     if (s === "flight") this.phase = "pickup";
     else this.gather(now);

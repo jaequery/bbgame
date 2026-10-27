@@ -8,6 +8,8 @@ export const MOVE = {
   /** Speed multiplier while dribbling. */
   dribbling: 0.86,
   accel: 16,
+  /** Decay rate (1/s) of a hold-cross slide. */
+  slideRate: 7,
   turnRate: 9,
   /** A cut sharper than this (rad) at speed squeaks the sneakers. */
   squeakAngle: 1.7,
@@ -28,6 +30,14 @@ export class Locomotion {
   yaw = Math.atan2(1, 0);
   sprinting = false;
   private squeakCooldown = 0;
+  /** Sideways slide (hold-cross): a velocity that dies away, covering `distance` in total. */
+  private readonly slideVel = new THREE.Vector3();
+  /** Spin move: a full turn about Y that comes back to the facing it started from. */
+  private spinDir = 0;
+  private spinLeft = 0;
+  private spinTime = 0;
+  /** Extra yaw (rad) the spin adds on top of `yaw`. */
+  spinAngle = 0;
   private readonly want = new THREE.Vector3();
 
   constructor(readonly position: THREE.Vector3) {}
@@ -58,6 +68,13 @@ export class Locomotion {
     if (dv.length() > max) dv.setLength(max);
     this.velocity.add(dv);
     this.position.addScaledVector(this.velocity, dt);
+    this.position.addScaledVector(this.slideVel, dt);
+    this.slideVel.multiplyScalar(Math.exp(-MOVE.slideRate * dt));
+    if (this.spinLeft > 0) {
+      this.spinLeft = Math.max(0, this.spinLeft - dt);
+      const u = 1 - this.spinLeft / this.spinTime;
+      this.spinAngle = this.spinLeft > 0 ? this.spinDir * Math.PI * 2 * u * u * (3 - 2 * u) : 0;
+    }
 
     const p = this.position;
     const clampAxis = (axis: "x" | "z", min: number, max: number) => {
@@ -77,10 +94,37 @@ export class Locomotion {
     this.facing.set(Math.sin(this.yaw), 0, Math.cos(this.yaw));
   }
 
+  /** Slides sideways: `dir` is a unit floor vector, `distance` metres in total. */
+  slide(dir: THREE.Vector3, distance: number) {
+    this.slideVel.copy(dir).multiplyScalar(distance * MOVE.slideRate);
+  }
+
+  /** Turns a full circle (+1 = to the player's left) over `time` seconds. */
+  spin(dir: 1 | -1, time: number) {
+    this.spinDir = dir;
+    this.spinTime = time;
+    this.spinLeft = time;
+  }
+
+  /** Where the body is drawn facing: the heading plus any spin in progress. */
+  get renderYaw() {
+    return this.yaw + this.spinAngle;
+  }
+
+  /** Average ground velocity over the next `horizon` seconds, counting a slide that is still running. */
+  expectedVelocity(horizon: number, out: THREE.Vector3) {
+    const k = MOVE.slideRate;
+    const avg = horizon > 1e-3 ? (1 - Math.exp(-k * horizon)) / (k * horizon) : 1;
+    return out.copy(this.velocity).addScaledVector(this.slideVel, avg);
+  }
+
   /** Stand still at `at`, squared up to the +X hoop. */
   placeAt(at: THREE.Vector3) {
     this.position.copy(at);
     this.velocity.set(0, 0, 0);
+    this.slideVel.set(0, 0, 0);
+    this.spinLeft = 0;
+    this.spinAngle = 0;
     this.yaw = Math.atan2(HOOP_X - at.x, -at.z);
     this.facing.set(Math.sin(this.yaw), 0, Math.cos(this.yaw));
   }
