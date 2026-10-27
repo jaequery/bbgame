@@ -9,7 +9,7 @@ import {
 import { DRIBBLE, toWorld, type Body, type DribbleController, type Hand } from "./dribble";
 import type { HoopHit } from "./hoopPhysics";
 
-// The jumper: hold Space to gather the ball into both hands and rise, release
+// The jumper: hold Space (or F for the fadeaway, which leans away from the hoop) to gather the ball into both hands and rise, release
 // at the top. The release only picks a launch velocity — where the ball goes
 // after that (swish, bank, rim out) is the ball physics against the hoop.
 
@@ -51,6 +51,17 @@ export const SHOT = {
   reboundWaitMade: 0.75,
   reboundWaitMiss: 0.5,
   passTime: 0.8,
+  /** The fadeaway (F): the jumper while falling away from the hoop. */
+  fade: {
+    /** Backward travel away from the rim over the whole jump (m). */
+    drift: 0.7,
+    /** Body tilt back at the apex (rad, torso and ball path). */
+    lean: 0.5,
+    /** Set point pulled back behind the head at full lean (m). */
+    setBack: 0.22,
+    /** Perfect window × this: harder to time than the standard jumper. */
+    toleranceScale: 0.6,
+  },
 };
 
 export type ShotPhase = "none" | "pickup" | "gather" | "air" | "flight" | "rebound" | "pass";
@@ -71,6 +82,8 @@ export interface ShotRelease {
   speed: number;
   /** Space was held all the way down. */
   forced: boolean;
+  /** A fadeaway (F), not the standard jumper. */
+  fade: boolean;
 }
 
 export interface ShotResult extends ShotRelease {
@@ -148,7 +161,14 @@ export class ShotController {
   attempts = 0;
   makes = 0;
 
+  /** The jump in progress is a fadeaway. */
+  fade = false;
+  /** 0…1 how far the fadeaway has leaned back (follows the jump). */
+  lean = 0;
+
   private spaceDown = false;
+  private driftT = 0;
+  private lastUpdate = 0;
   private airborne = false;
   private gatherStart = 0;
   private readonly gatherFrom = new THREE.Vector3();
@@ -194,17 +214,20 @@ export class ShotController {
     this.jumpY = 0;
     this.airborne = false;
     this.spaceDown = false;
+    this.fade = false;
+    this.lean = 0;
     this.scored = false;
     this.rimHits = 0;
     this.boardHits = 0;
   }
 
-  /** Space went down. */
-  press(now: number) {
+  /** Space (or F, for the fadeaway) went down. */
+  press(now: number, fade = false) {
     if (this.phase !== "none") return;
     const s = this.dribble.state;
     if (s === "loose" || s === "shot") return;
     this.spaceDown = true;
+    this.fade = fade;
     if (s === "flight") this.phase = "pickup";
     else this.gather(now);
   }
@@ -235,7 +258,20 @@ export class ShotController {
         this.jumpY = 0;
         this.airborne = false;
       }
+      // Fadeaway: float away from the rim over the jump, tilting back as the body rises.
+      if (this.fade) {
+        const away = this.tmp.set(this.body.position.x - RIM.x, 0, this.body.position.z - RIM.z);
+        if (away.lengthSq() > 1e-6) {
+          const step = Math.max(0, Math.min(t, AIR_TIME) - this.driftT);
+          this.body.position.addScaledVector(away.normalize(), (SHOT.fade.drift / AIR_TIME) * step);
+          this.driftT = Math.max(this.driftT, Math.min(t, AIR_TIME));
+        }
+      }
     }
+    const leanTo = this.fade && this.airborne ? 1 : 0;
+    this.lean += (leanTo - this.lean) * Math.min(1, (this.fade ? 14 : 8) * (now - this.lastUpdate || 0));
+    if (this.lean < 1e-3 && !this.airborne) this.lean = 0;
+    this.lastUpdate = now;
     const ball = this.dribble.ball;
 
     switch (this.phase) {
@@ -255,6 +291,7 @@ export class ShotController {
           this.phase = "air";
           this.airborne = true;
           this.liftAt = now;
+          this.driftT = 0;
           this.apexAt = now + LEAP / GRAVITY;
         }
         break;
@@ -310,7 +347,7 @@ export class ShotController {
     const distance = dir.length();
     if (distance < 1e-3) dir.set(Math.sin(this.body.yaw), 0, Math.cos(this.body.yaw));
     dir.normalize();
-    const tolerance = shotTolerance(distance);
+    const tolerance = this.tolerance(distance);
     const error = now - this.apexAt;
     const units = THREE.MathUtils.clamp(error / tolerance, -SHOT.maxUnits, SHOT.maxUnits);
     const grade: ReleaseGrade = Math.abs(error) <= tolerance ? "perfect" : error < 0 ? "early" : "late";
@@ -346,6 +383,7 @@ export class ShotController {
       angle: +THREE.MathUtils.radToDeg(launch.angle).toFixed(2),
       speed: +launch.speed.toFixed(3),
       forced,
+      fade: this.fade,
     };
     this.events.release(this.lastRelease);
   }
@@ -370,6 +408,11 @@ export class ShotController {
     this.events.result(this.lastResult);
   }
 
+  /** Perfect-release half window (s) for this jump: tighter on a fadeaway. */
+  private tolerance(distance: number) {
+    return shotTolerance(distance) * (this.fade ? SHOT.fade.toleranceScale : 1);
+  }
+
   /** The rebounder's short pass back: a ballistic lob to where the player will be. */
   private pass(now: number) {
     const ball = this.dribble.ball;
@@ -385,12 +428,14 @@ export class ShotController {
 
   /** A body-local point (x: + left, y: height above the floor + `lift`) in world space. */
   private local(p: V3, lift: number, out: THREE.Vector3) {
-    return toWorld([p[0], p[1] + lift, p[2]], this.body.position, this.body.yaw, out);
+    // Leaning back pulls the ball behind the head and the set point down a touch.
+    const l = this.lean;
+    return toWorld([p[0], p[1] + lift - 0.12 * l * (p[1] / SET[1]), p[2] - SHOT.fade.setBack * l * (p[1] / SET[1])], this.body.position, this.body.yaw, out);
   }
 
   /** Snapshot for the shot meter: 0…1 through the jump, the perfect zone, and the last grade. */
   meter() {
-    const tol = shotTolerance(this.distanceToRim());
+    const tol = this.tolerance(this.distanceToRim());
     const fill = this.phase === "gather" || this.phase === "pickup" ? 0 : THREE.MathUtils.clamp((this.now - this.liftAt) / AIR_TIME, 0, 1);
     const half = tol / AIR_TIME;
     return {

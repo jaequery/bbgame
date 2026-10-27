@@ -60,3 +60,10 @@ Manual: hold Space, watch the meter beside the player — let go as the red fill
   `SWISH!! +1,500 · 3PT 300 + COMBO 400 ×3`; `×0` afterwards.
 - ±0.2 s → miss with `rimHits + boardHits > 0` (RIM OUT…), combo ×0, score unchanged.
 - `dribble.state` back to `held` within ~1.6 s of the result.
+
+## Fadeaway (F)
+
+Hold **F** instead of Space: same gather → jump → release flow and grading, but the player drifts
+`SHOT.fade.drift` (0.7 m) away from the rim and leans back (`SHOT.fade.lean`), and the perfect window
+is `SHOT.fade.toleranceScale` (0.6×) of the Space jumper's. `__game.shot.fade` / `.lean` and
+`lastRelease.fade` expose it. Drive: `node scripts/verify/fadeaway.mjs`.

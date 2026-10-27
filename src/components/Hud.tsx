@@ -11,6 +11,7 @@ const CONTROLS: [string, string][] = [
   ["I", "High"],
   [",", "Behind back"],
   ["SPACE", "Shoot"],
+  ["F", "Fadeaway"],
   ["WASD", "Move"],
   ["SHIFT", "Sprint"],
   ["V", "View"],
