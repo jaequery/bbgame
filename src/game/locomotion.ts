@@ -26,6 +26,10 @@ export const MOVE = {
   /** A cut sharper than this (rad) at speed squeaks the sneakers. */
   squeakAngle: 1.7,
   squeakMinSpeed: 2.2,
+  /** Ground covered by one step (m). */
+  stepLength: 0.8,
+  /** Steps allowed once the dribble has ended and the ball rests in the hand; the next one is blocked. */
+  maxSteps: 2,
 };
 
 /** Keeps the body inside the gym floor; the ball's bounds match. */
@@ -56,6 +60,10 @@ export class Locomotion {
   spinAngle = 0;
   /** Backing down: the back (and butt) is to the hoop. */
   backingDown = false;
+  /** Metres walked since the dribble ended (only counted while `holdingBall`). */
+  private walked = 0;
+  /** The dribble has ended and the ball rests in the hand: walking is limited to `MOVE.maxSteps` steps. */
+  holdingBall = false;
   private readonly want = new THREE.Vector3();
 
   constructor(readonly position: THREE.Vector3) {}
@@ -66,6 +74,13 @@ export class Locomotion {
    * @param heading with the feet planted (`input` is zero): a direction to turn toward on the spot, whatever the hoop-facing
    */
   step(dt: number, input: THREE.Vector3, sprint: boolean, dribbling: boolean, onSqueak: (speed: number) => void, heading?: THREE.Vector3) {
+    // Two steps after the dribble ends, then the feet stop until a new dribble starts (which resets the count).
+    if (!this.holdingBall) this.walked = 0;
+    const blocked = this.holdingBall && this.walked >= MOVE.maxSteps * MOVE.stepLength;
+    if (blocked) {
+      input = this.want.set(0, 0, 0);
+      this.velocity.set(0, 0, 0);
+    } else if (this.holdingBall) this.walked += Math.hypot(this.velocity.x, this.velocity.z) * dt;
     const moving = input.lengthSq() > 1e-4;
     this.sprinting = sprint && moving;
     const top = (this.sprinting ? MOVE.sprint : MOVE.walk) * (dribbling ? MOVE.dribbling : 1) * (this.backingDown ? MOVE.backDownSpeed : 1);
@@ -182,6 +197,7 @@ export class Locomotion {
 
   /** Stand still at `at`, squared up to the +X hoop. */
   placeAt(at: THREE.Vector3) {
+    this.walked = 0;
     this.position.copy(at);
     this.velocity.set(0, 0, 0);
     this.slideVel.set(0, 0, 0);
@@ -192,6 +208,11 @@ export class Locomotion {
     this.backingDown = false;
     this.yaw = Math.atan2(HOOP_X - at.x, -at.z);
     this.facing.set(Math.sin(this.yaw), 0, Math.cos(this.yaw));
+  }
+
+  /** Steps taken since the dribble ended (0 while dribbling). */
+  get steps() {
+    return Math.floor(this.walked / MOVE.stepLength + 1e-6);
   }
 
   get speed() {

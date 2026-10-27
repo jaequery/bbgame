@@ -59,6 +59,8 @@ export interface GameDebugHandle {
     velocity: [number, number, number];
     speed: number;
     sprinting: boolean;
+    /** Steps taken since the last dribble ended; a third is blocked until a new dribble starts. */
+    steps: number;
   };
   ball: {
     position: [number, number, number];
@@ -580,6 +582,7 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
       else commaSince = null;
       body.backingDown = commaSince !== null && simTime - commaSince >= MOVE.backDownDelay;
       // In the triple-threat hold the feet stay planted but the body turns toward the way WASD points.
+      body.holdingBall = dribble.state === "held";
       body.step(STEP, shot.feetLocked ? still : move, sprint, dribbling, squeak, shot.inHold ? move : undefined);
       dribble.update(simTime, STEP);
       shot.update(simTime);
@@ -652,6 +655,7 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
           velocity: tuple(body.velocity),
           speed: +body.speed.toFixed(3),
           sprinting: body.sprinting,
+          steps: body.steps,
         };
       },
       get ball() {
