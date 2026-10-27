@@ -118,7 +118,7 @@ function Title({
         </button>
         <button className={styles.button} onClick={() => onStart("twos")} data-testid="start-twos">
           <span className={styles.btnMain}>2v2</span>
-          <span className={styles.btnSub}>You + AI teammate vs two bots · first to 11 · 3PT = 2</span>
+          <span className={styles.btnSub}>You + AI teammate vs two bots · E pass · first to 11 · 3PT = 2</span>
         </button>
         <button className={styles.button} onClick={() => onStart("defense")} data-testid="start-defense">
           <span className={styles.btnMain}>DEFENSE DRILL</span>

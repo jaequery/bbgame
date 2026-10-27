@@ -5,7 +5,7 @@
 // poses the bot's model from these numbers.
 
 import * as THREE from "three";
-import { BALL_RADIUS, FLOOR_MAX_X, FLOOR_MAX_Z, FLOOR_MIN_X, FLOOR_MIN_Z, GRAVITY, HOOP_X, RIM_HEIGHT } from "./dimensions";
+import { BALL_RADIUS, BALL_RESTITUTION, FLOOR_MAX_X, FLOOR_MAX_Z, FLOOR_MIN_X, FLOOR_MIN_Z, GRAVITY, HOOP_X, RIM_HEIGHT } from "./dimensions";
 
 /** 2v2: first team to `target` wins; a basket is 1 point, 2 from beyond the arc. */
 export const TWOS = {
@@ -15,6 +15,70 @@ export const TWOS = {
   /** A teammate this close (m) in front of a shooter can contest it. */
   contestReach: 2.2,
 };
+
+/** Passing in 2v2. */
+export const PASS = {
+  /** Chest pass speed (m/s) and bounce pass speed. */
+  speed: 11,
+  bounceSpeed: 9,
+  /** Ball height (m) at the passer's hands and where a chest pass is aimed on the receiver. */
+  releaseHeight: 1.25,
+  aimHeight: 1.2,
+  /** Bounce pass: the bounce lands between these fractions of the way, whichever arrives nearest `bounceArrive`. */
+  bounceAt: [0.4, 0.75] as [number, number],
+  bounceArrive: 0.95,
+  /** A defender this close (m) to the line of the pass turns it into a bounce pass. */
+  laneWidth: 1.0,
+  /** Receivers catch a ball within this horizontal reach (m) and between these heights (m). */
+  catchReach: 0.95,
+  catchHeight: [0.3, 2.2] as [number, number],
+  /** A defender within this reach (m) and below this height (m) may pick it off, once per pass. */
+  interceptReach: 0.8,
+  interceptHeight: 2.3,
+  interceptChance: 0.7,
+  /** Bounce passes go under the hands: a lower chance. */
+  bounceInterceptChance: 0.3,
+  /** A pass not caught after this many seconds, or one that is rolling, is a turnover. */
+  maxFlight: 2.4,
+  /** The teammate holds the ball this long (s) before passing back. */
+  mateHold: [0.7, 1.3] as [number, number],
+  /** The teammate takes the shot when his nearest defender is farther than this (m) and he is within `TWOS.shootRange[1]` of the hoop. */
+  openDistance: 2.3,
+  /** Pause (s) before the possession flips after a turnover. */
+  turnoverDelay: 0.9,
+  /** Your arms stay out in front for this long (s) after a pass. */
+  armsOut: 0.45,
+};
+
+/** Release velocity (m/s) from `from` that lands a pass on `to`: a chest pass, or one bounce first. Returns the flight time (s). */
+export function passVelocity(from: THREE.Vector3, to: THREE.Vector3, bounce: boolean, out: THREE.Vector3) {
+  const dx = to.x - from.x;
+  const dz = to.z - from.z;
+  const d = Math.max(0.5, Math.hypot(dx, dz));
+  if (!bounce) {
+    const t = d / PASS.speed;
+    out.set(dx / t, (to.y - from.y + 0.5 * GRAVITY * t * t) / t, dz / t);
+    return t;
+  }
+  const t = d / PASS.bounceSpeed;
+  let best = PASS.bounceAt[0];
+  let bestErr = Infinity;
+  for (let i = 0; i <= 8; i++) {
+    const f = PASS.bounceAt[0] + ((PASS.bounceAt[1] - PASS.bounceAt[0]) * i) / 8;
+    const tb = t * f;
+    const vy = (BALL_RADIUS - from.y + 0.5 * GRAVITY * tb * tb) / tb;
+    const up = -(vy - GRAVITY * tb) * BALL_RESTITUTION;
+    const t2 = t - tb;
+    const err = Math.abs(BALL_RADIUS + up * t2 - 0.5 * GRAVITY * t2 * t2 - PASS.bounceArrive);
+    if (err < bestErr) {
+      bestErr = err;
+      best = f;
+    }
+  }
+  const tb = t * best;
+  out.set(dx / t, (BALL_RADIUS - from.y + 0.5 * GRAVITY * tb * tb) / tb, dz / t);
+  return t;
+}
 
 export const DUEL = {
   /** Length of a 1v1 match or defense drill (s). */
@@ -138,12 +202,21 @@ export class BotOffense {
   private readonly perp = new THREE.Vector3();
   private readonly rel = new THREE.Vector3();
 
-  constructor(private readonly random: () => number = Math.random) {}
+  constructor(
+    private readonly random: () => number = Math.random,
+    /** The hoop this side attacks: the -X one for the bot, the +X one for your teammate. */
+    private readonly hoop: THREE.Vector3 = BOT_HOOP,
+  ) {}
+
+  /** +1 / -1: which way is back toward the court from the hoop. */
+  private get back() {
+    return -Math.sign(this.hoop.x);
+  }
 
   start(at: THREE.Vector3, now: number) {
     this.position.copy(at);
     this.velocity.set(0, 0, 0);
-    this.yaw = Math.atan2(BOT_HOOP.x - at.x, BOT_HOOP.z - at.z);
+    this.yaw = Math.atan2(this.hoop.x - at.x, this.hoop.z - at.z);
     this.jumpY = 0;
     this.phase = "dribble";
     this.phaseAt = now;
@@ -189,14 +262,14 @@ export class BotOffense {
 
   /** Distance to the hoop the bot attacks (m). */
   get hoopDistance() {
-    return Math.hypot(BOT_HOOP.x - this.position.x, BOT_HOOP.z - this.position.z);
+    return Math.hypot(this.hoop.x - this.position.x, this.hoop.z - this.position.z);
   }
 
   update(now: number, dt: number, defender: THREE.Vector3, events: OffenseEvents) {
     const k = 1 - Math.exp(-dt * 8);
     switch (this.phase) {
       case "dribble": {
-        const toHoop = this.dir.set(BOT_HOOP.x - this.position.x, 0, BOT_HOOP.z - this.position.z);
+        const toHoop = this.dir.set(this.hoop.x - this.position.x, 0, this.hoop.z - this.position.z);
         const dist = toHoop.length();
         toHoop.normalize();
         const perp = this.perp.set(toHoop.z, 0, -toHoop.x);
@@ -213,7 +286,7 @@ export class BotOffense {
         this.velocity.x += (toHoop.x * speed - this.velocity.x) * k;
         this.velocity.z += (toHoop.z * speed - this.velocity.z) * k;
         this.position.addScaledVector(this.velocity, dt);
-        const want = Math.atan2(BOT_HOOP.x - this.position.x, BOT_HOOP.z - this.position.z);
+        const want = Math.atan2(this.hoop.x - this.position.x, this.hoop.z - this.position.z);
         this.turnTo(want, dt);
         if (now >= this.crossAt) {
           this.ballSide = -this.ballSide;
@@ -236,7 +309,7 @@ export class BotOffense {
         this.position.addScaledVector(this.velocity, dt);
         const u = clamp01((now - this.phaseAt) / DUEL.bot.windup);
         this.jumpY = 0.42 * smooth(clamp01((u - 0.3) / 0.7));
-        this.turnTo(Math.atan2(BOT_HOOP.x - this.position.x, BOT_HOOP.z - this.position.z), dt);
+        this.turnTo(Math.atan2(this.hoop.x - this.position.x, this.hoop.z - this.position.z), dt);
         // The ball rides up from the chest to the forehead.
         this.ball.set(this.position.x, 1.1 + 1.2 * smooth(u) + this.jumpY, this.position.z);
         this.ball.addScaledVector(this.dir.set(Math.sin(this.yaw), 0, Math.cos(this.yaw)), 0.25);
@@ -253,7 +326,7 @@ export class BotOffense {
           this.phase = "drop";
           this.phaseAt = now;
           if (this.made) this.ballVel.set(0, -1.5, 0);
-          else this.ballVel.set(1 + this.random() * 1.2, 1.6, (this.random() - 0.5) * 2.4);
+          else this.ballVel.set(this.back * (1 + this.random() * 1.2), 1.6, (this.random() - 0.5) * 2.4);
         }
         break;
       }
@@ -286,13 +359,13 @@ export class BotOffense {
     if (verdict === "blocked") {
       // Swatted back toward the shooter's own court.
       this.phase = "drop";
-      this.ballVel.set(1.8 + this.random(), 2.4, (this.random() - 0.5) * 3);
+      this.ballVel.set(this.back * (1.8 + this.random()), 2.4, (this.random() - 0.5) * 3);
       this.made = false;
       events.result(false, true);
       return;
     }
     this.made = this.random() < (verdict === "contested" ? base * h.contested : base);
-    this.to.copy(BOT_HOOP);
+    this.to.copy(this.hoop);
     if (!this.made) {
       // Off the front or back of the rim.
       const off = (this.random() < 0.5 ? -1 : 1) * (0.28 + this.random() * 0.12);
@@ -416,6 +489,11 @@ export class BotSpacer {
   }
 
   /** Wing, corner or a cut to the short side, on the side of the floor the handler is not on. */
+  /** Stay put (no new spot) until `until`, e.g. while a pass is on its way. */
+  hold(until: number) {
+    this.nextAt = Math.max(this.nextAt, until);
+  }
+
   private pick(handler: THREE.Vector3, now: number) {
     const dir = Math.sign(this.hoop.x);
     const side = Math.abs(handler.z) < 0.6 ? (this.random() < 0.5 ? -1 : 1) : -Math.sign(handler.z);

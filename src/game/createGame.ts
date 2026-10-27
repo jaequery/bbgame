@@ -24,7 +24,7 @@ import { createHoop } from "./hoop";
 import { HoopCollider } from "./hoopPhysics";
 import { hudStore, type Callout, type HudState, type ViewId } from "./hudStore";
 import { Locomotion, MOVE } from "./locomotion";
-import { BotGuard, BotOffense, BotSpacer, BOT_HOOP, Defender, DUEL, PLAYER_HOOP, separate, TWOS, type OffenseEvents } from "./duel";
+import { BotGuard, BotOffense, BotSpacer, BOT_HOOP, Defender, DUEL, PASS, passVelocity, PLAYER_HOOP, separate, TWOS, type OffenseEvents } from "./duel";
 import { runControl, SessionClock, type PlayMode, type SessionResult } from "./session";
 import { createPlayer, HERO_LOOK, WRIST_ABOVE_BALL, type Look, type Side } from "./player";
 import { AIR_TIME, SHOT, ShotController, type FinishKind, type ShotPhase, type ShotRelease, type ShotResult } from "./shot";
@@ -167,6 +167,20 @@ export interface GameDebugHandle {
     target: number;
     mate: [number, number, number];
     opponents: TwosSpots;
+  };
+  /** 2v2: pass to your teammate (or to the floor point `aim` [x, z]); false if a pass isn't allowed now. */
+  pass(aim?: [number, number]): boolean;
+  /** 2v2 passing: who has the ball and where the pass is. */
+  passState: {
+    phase: "none" | "flight" | "loose" | "mate";
+    from: "you" | "mate";
+    bounce: boolean;
+    /** The teammate is shooting rather than holding for a return pass. */
+    mateShoots: boolean;
+    ball: [number, number, number];
+    velocity: [number, number, number];
+    /** How the last pass ended: caught, intercepted, missed. */
+    last: "caught" | "intercepted" | "missed" | null;
   };
   /** Automation: set the 2v2 team scores (e.g. 10 to be one basket from the win). */
   setTwosScore(us: number, them: number): void;
@@ -446,7 +460,7 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
 
   // Input: dribble keys are queued with their timestamps and applied in the
   // substep they happened in; WASD/Shift are held state.
-  const queue: { key: DribbleKey | "ShootDown" | "ShootUp"; t: number; up?: boolean }[] = [];
+  const queue: { key: DribbleKey | "ShootDown" | "ShootUp" | "Pass"; t: number; up?: boolean }[] = [];
   const held = new Set<string>();
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
@@ -459,6 +473,7 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
     unlockAudio();
     if (e.code === "KeyV") rig.cycle();
     if (e.code === "Space") queue.push({ key: "ShootDown", t: simAt(e.timeStamp / 1000) });
+    if (e.code === "KeyE") queue.push({ key: "Pass", t: simAt(e.timeStamp / 1000) });
     const key = KEY_CODES[e.code];
     if (key) queue.push({ key, t: simAt(e.timeStamp / 1000) });
   };
@@ -502,6 +517,22 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
   const mateSpacer = new BotSpacer(PLAYER_HOOP);
   const mateGuard = new BotGuard(Math.random, BOT_HOOP);
   const twos = () => match.mode === "twos";
+  // 2v2 passing: a pass is the ball as a rigid body flying between you and your teammate. "mate": he has it.
+  const mateOff = new BotOffense(Math.random, PLAYER_HOOP);
+  const passBall = new BallBody();
+  const pass = {
+    phase: "none" as "none" | "flight" | "loose" | "mate",
+    from: "you" as "you" | "mate",
+    bounce: false,
+    startedAt: 0,
+    thrownAt: -Infinity,
+    mateUntil: 0,
+    mateShoots: false,
+    last: null as "caught" | "intercepted" | "missed" | null,
+    tried: new Set<BotGuard>(),
+  };
+  /** You have given the ball up: in the air, or with your teammate. */
+  const noBall = () => twos() && match.active && match.phase === "offense" && pass.phase !== "none";
   const oppGuards = () => [botGuard, oppGuard2];
   let noteId = 1_000_000;
   const note = (text: string, tone: Callout["tone"], detail?: string) =>
@@ -546,6 +577,7 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
     queue.length = 0;
     commaSince = null;
     defender.reset();
+    pass.phase = "none";
     if (phase === "offense") {
       body.faceTarget = null;
       body.placeAt(PLAYER_START);
@@ -589,6 +621,7 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
     botBall.visible = false;
     botBallShadow.visible = false;
     defender.reset();
+    pass.phase = "none";
   };
   const offenseEvents: OffenseEvents = {
     release: () => {
@@ -639,6 +672,153 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
   const separateAll = (spots: THREE.Vector3[]) => {
     for (let i = 0; i < spots.length; i++) for (let j = i + 1; j < spots.length; j++) separate(spots[i], spots[j]);
   };
+  const passFrom = new THREE.Vector3();
+  const passTo = new THREE.Vector3();
+  const passVel = new THREE.Vector3();
+  const mateBall = new THREE.Vector3();
+  /** Distance (m) from point (px, pz) to the segment a→b on the floor. */
+  const laneDistance = (px: number, pz: number, a: THREE.Vector3, b: THREE.Vector3) => {
+    const abx = b.x - a.x;
+    const abz = b.z - a.z;
+    const len2 = abx * abx + abz * abz || 1;
+    const t = THREE.MathUtils.clamp(((px - a.x) * abx + (pz - a.z) * abz) / len2, 0, 1);
+    return Math.hypot(px - (a.x + abx * t), pz - (a.z + abz * t));
+  };
+  const nearestOpp = (at: THREE.Vector3) => {
+    const d = (g: BotGuard) => Math.hypot(at.x - g.position.x, at.z - g.position.z);
+    return d(oppGuard2) < d(botGuard) ? oppGuard2 : botGuard;
+  };
+  /** Throws the ball: you → teammate or teammate → you (or at the floor point `aim`). */
+  const startPass = (fromYou: boolean, now: number, aim?: [number, number]) => {
+    const src = fromYou ? body.position : mateSpacer.position;
+    const dst = fromYou ? mateSpacer : { position: body.position, velocity: body.velocity };
+    passFrom.set(src.x, PASS.releaseHeight, src.z);
+    const lead = Math.hypot(dst.position.x - src.x, dst.position.z - src.z) / PASS.speed;
+    if (aim) passTo.set(aim[0], PASS.aimHeight, aim[1]);
+    else passTo.set(dst.position.x + dst.velocity.x * lead, PASS.aimHeight, dst.position.z + dst.velocity.z * lead);
+    // A defender in the lane: go under his hands with a bounce pass.
+    pass.bounce = oppGuards().some((g) => laneDistance(g.position.x, g.position.z, passFrom, passTo) < PASS.laneWidth);
+    const flight = passVelocity(passFrom, passTo, pass.bounce, passVel);
+    passBall.position.copy(passFrom);
+    passBall.release(passVel);
+    passBall.orientation.identity();
+    pass.phase = "flight";
+    pass.from = fromYou ? "you" : "mate";
+    pass.startedAt = now;
+    pass.thrownAt = now;
+    pass.tried.clear();
+    ball.visible = true;
+    if (fromYou) body.faceTarget = mateSpacer.position;
+    // The receiver stays where the ball is going.
+    if (fromYou) mateSpacer.hold(now + flight + 0.4);
+    playSqueak(3);
+    pop(pass.bounce ? "ポン" : "パシッ", passFrom, 0.6);
+  };
+  /** Pass key: only in 2v2, with the ball in your hands and no shot under way. */
+  const tryPass = (now: number, aim?: [number, number]) => {
+    const ok =
+      twos() &&
+      match.active &&
+      match.phase === "offense" &&
+      match.switchAt === null &&
+      !match.locked &&
+      pass.phase === "none" &&
+      (shot.phase === "none" || shot.inHold) &&
+      shot.jumpY === 0 &&
+      dribble.state !== "loose" &&
+      dribble.state !== "shot";
+    if (ok) startPass(true, now, aim);
+    return ok;
+  };
+  /** The pass is dead: your ball is taken (steal) or lost (missed pass); the opponents take it the other way. */
+  const turnover = (how: "intercepted" | "missed") => {
+    pass.last = how;
+    if (how === "intercepted") {
+      pass.phase = "none";
+      ball.visible = false;
+      note("INTERCEPTED!", "lost", scoreLine());
+      pop("バシッ", passBall.position, 1);
+      playSqueak(4);
+    } else {
+      pass.phase = "loose";
+      note("BAD PASS", "lost", scoreLine());
+    }
+    scheduleSwitch(how === "intercepted" ? DUEL.stealDelay : PASS.turnoverDelay, "defense", true);
+  };
+  const caught = (byYou: boolean, now: number) => {
+    pass.last = "caught";
+    if (byYou) {
+      pass.phase = "none";
+      body.faceTarget = null;
+      dribble.restart();
+      shot.restart();
+      note("GOT IT", "shot");
+      return;
+    }
+    pass.phase = "mate";
+    mateSpacer.hold(now + PASS.mateHold[1] + 0.5);
+    // Open and close enough: he takes the shot; otherwise he gives it back.
+    const guard = nearestOpp(mateSpacer.position);
+    const open = Math.hypot(guard.position.x - mateSpacer.position.x, guard.position.z - mateSpacer.position.z) > PASS.openDistance;
+    const dist = Math.hypot(PLAYER_HOOP.x - mateSpacer.position.x, PLAYER_HOOP.z - mateSpacer.position.z);
+    pass.mateShoots = open && dist < TWOS.shootRange[1];
+    if (pass.mateShoots) {
+      mateOff.shootRange = TWOS.shootRange[1];
+      mateOff.start(mateSpacer.position, now);
+    } else {
+      pass.mateUntil = now + PASS.mateHold[0] + Math.random() * (PASS.mateHold[1] - PASS.mateHold[0]);
+    }
+  };
+  /** One physics substep of a pass in the air: the ball flies, then gets caught, picked off or lost. */
+  const stepPass = (now: number) => {
+    if (pass.phase !== "flight" && pass.phase !== "loose") return;
+    passBall.step(STEP, (e) => playBounce(e.speed));
+    if (pass.phase === "loose") return;
+    const p = passBall.position;
+    const reach = (a: THREE.Vector3) => Math.hypot(p.x - a.x, p.z - a.z);
+    for (const g of oppGuards()) {
+      if (pass.tried.has(g) || reach(g.position) > PASS.interceptReach || p.y > PASS.interceptHeight) continue;
+      pass.tried.add(g);
+      if (Math.random() < (pass.bounce ? PASS.bounceInterceptChance : PASS.interceptChance)) return turnover("intercepted");
+    }
+    const target = pass.from === "you" ? mateSpacer.position : body.position;
+    if (reach(target) < PASS.catchReach && p.y >= PASS.catchHeight[0] && p.y <= PASS.catchHeight[1]) return caught(pass.from === "mate", now);
+    if (now - pass.startedAt > PASS.maxFlight || passBall.rolling) turnover("missed");
+  };
+  /** The shot your teammate takes after a catch: the opponents' bots can contest or swat it. */
+  const mateEvents: OffenseEvents = {
+    release: () => {
+      const guard = nearestOpp(mateOff.position);
+      const gx = guard.position.x - mateOff.position.x;
+      const gz = guard.position.z - mateOff.position.z;
+      const inFront = gx * (PLAYER_HOOP.x - mateOff.position.x) + gz * (0 - mateOff.position.z) > 0;
+      const d = Math.hypot(gx, gz);
+      if (inFront && guard.blocks(d)) return "blocked";
+      if (inFront && d < TWOS.contestReach && Math.random() < 0.6) return "contested";
+      return "open";
+    },
+    result: (made, blocked) => {
+      if (match.switchAt !== null) return;
+      if (blocked) {
+        note("SWATTED!", "miss", scoreLine());
+        pop("バシッ", mateOff.ball, 1);
+        playRim(6);
+      } else if (made) {
+        const three = mateOff.hoopDistance > THREE_POINT_RADIUS;
+        match.you += three ? 2 : 1;
+        note(three ? "TEAMMATE HITS A THREE" : "TEAMMATE SCORES", "shot", scoreLine());
+        playSwish();
+        netKick[0] = elapsed;
+        pop("シュパッ", nets[0].getWorldPosition(new THREE.Vector3()), 0.8);
+      } else {
+        note("NO GOOD", "miss", scoreLine());
+        playRim(3);
+        pop("ガンッ", mateOff.ball, 0.6);
+      }
+      scheduleSwitch(DUEL.switchDelay, "defense");
+    },
+    cross: () => {},
+  };
   /** First to the target wins: the win/lose screen. */
   const endTwos = () => {
     const result = { mode: "twos" as const, you: match.you, bot: match.bot, stops: match.stops, won: match.you > match.bot };
@@ -657,11 +837,22 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
     if (match.phase === "offense") {
       botGuard.update(simTime, dt, body.position);
       if (twos()) {
-        mateSpacer.update(simTime, dt, body.position);
+        if (pass.phase === "mate" && pass.mateShoots) {
+          // He took the pass and goes up for the shot: the spacer follows him.
+          const guard = nearestOpp(mateOff.position);
+          mateOff.update(simTime, dt, guard.position, mateEvents);
+          mateSpacer.position.copy(mateOff.position);
+          mateSpacer.velocity.copy(mateOff.velocity);
+          mateSpacer.yaw = mateOff.yaw;
+          if (mateOff.phase === "windup" && Math.hypot(guard.position.x - mateOff.position.x, guard.position.z - mateOff.position.z) < DUEL.bot.block.contestRange) guard.contest(simTime);
+        } else {
+          mateSpacer.update(simTime, dt, pass.phase === "none" ? body.position : mateSpacer.position);
+          if (pass.phase === "mate" && match.switchAt === null && simTime >= pass.mateUntil) startPass(false, simTime);
+        }
         oppGuard2.update(simTime, dt, mateSpacer.position);
         separateAll([body.position, botGuard.position, oppGuard2.position, mateSpacer.position]);
       } else separate(body.position, botGuard.position);
-      const live = dribble.state !== "loose" && dribble.state !== "shot" && shot.phase === "none";
+      const live = dribble.state !== "loose" && dribble.state !== "shot" && shot.phase === "none" && pass.phase === "none";
       if (live && match.switchAt === null && oppGuards().slice(0, twos() ? 2 : 1).some((g) => g.tryStrip(simTime, dt, body.position))) {
         note("STRIPPED!", "lost", scoreLine());
         pop("バシッ", dribble.ball.position, 1);
@@ -799,6 +990,12 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
   const aimHands = (now: number) => {
     hands.L = hands.R = null;
     if (match.active && match.phase === "defense") return aimDefense(now);
+    if (noBall()) {
+      // Arms out in front after the throw, up for the catch.
+      hands.L = offsetFrom(body.position, 0.2, 1.3, 0.55, handTargets.L);
+      hands.R = offsetFrom(body.position, -0.2, 1.3, 0.55, handTargets.R);
+      return;
+    }
     const b = dribble.ball;
     if (shot.phase === "ext") {
       // The reaching hand carries the ball out; the other one guards.
@@ -857,7 +1054,8 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
     jumpY: number;
   }
   /** Poses one bot: dribbling with the ball, guarding with arms wide, or just spacing the floor. */
-  const poseFigure = (f: Figure, dt: number, src: Source, role: "offense" | "guard" | "spacer") => {
+  const poseFigure = (f: Figure, dt: number, src: Source, role: "offense" | "guard" | "spacer", holding?: THREE.Vector3) => {
+    const off = src as BotOffense;
     f.yaw = src.yaw;
     f.base.set(src.position.x, src.jumpY, src.position.z);
     f.model.root.position.copy(f.base);
@@ -865,15 +1063,17 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
     f.shadow.position.set(src.position.x, 0.003, src.position.z);
     f.hands.L = f.hands.R = null;
     let shoot: { dip: number; air: number } | undefined;
-    if (role === "offense" && botOff.phase === "dribble") {
-      const side: Side = botOff.ballSide > 0 ? "L" : "R";
-      f.hands[side] = f.targets[side].copy(botOff.ball).setY(botOff.ball.y + WRIST_ABOVE_BALL);
-    } else if (role === "offense" && (botOff.phase === "windup" || botOff.phase === "flight")) {
+    if (holding) {
+      f.hands.R = f.targets.R.copy(holding).setY(holding.y + WRIST_ABOVE_BALL);
+    } else if (role === "offense" && off.phase === "dribble") {
+      const side: Side = off.ballSide > 0 ? "L" : "R";
+      f.hands[side] = f.targets[side].copy(off.ball).setY(off.ball.y + WRIST_ABOVE_BALL);
+    } else if (role === "offense" && (off.phase === "windup" || off.phase === "flight")) {
       // Both hands under the ball, then up in the follow-through.
       for (const side of ["L", "R"] as const) {
-        f.hands[side] = figAt(f, 0.12, botOff.phase === "windup" ? botOff.ball.y - f.base.y - 0.03 : 2.2, 0.3, side);
+        f.hands[side] = figAt(f, 0.12, off.phase === "windup" ? off.ball.y - f.base.y - 0.03 : 2.2, 0.3, side);
       }
-      shoot = { dip: botOff.phase === "windup" && botOff.jumpY < 0.05 ? 1 : 0, air: THREE.MathUtils.clamp(botOff.jumpY / 0.15, 0, 1) };
+      shoot = { dip: off.phase === "windup" && off.jumpY < 0.05 ? 1 : 0, air: THREE.MathUtils.clamp(off.jumpY / 0.15, 0, 1) };
     } else if (role === "guard") {
       // Guarding: arms wide, up when it jumps at your shot.
       const guard = src as BotGuard;
@@ -894,6 +1094,17 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
       shoot,
     });
   };
+  /** Where your teammate's ball is while he holds it before passing back: a dribble at his right hand. */
+  const mateHoldBall = () => {
+    const yaw = mateSpacer.yaw;
+    const u = (simTime * DUEL.bot.bounceRate) % 1;
+    mateBall
+      .copy(mateSpacer.position)
+      .addScaledVector(passTo.set(Math.cos(yaw), 0, -Math.sin(yaw)), -0.42)
+      .addScaledVector(passTo.set(Math.sin(yaw), 0, Math.cos(yaw)), 0.35);
+    mateBall.y = BALL_RADIUS + 0.95 * 4 * u * (1 - u);
+    return mateBall;
+  };
   /** Poses the bots, their ball and shadows for the current possession. */
   const poseBot = (dt: number) => {
     const on = match.active;
@@ -913,7 +1124,8 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
         poseFigure(mateFig, dt, mateGuard, "guard");
       } else {
         poseFigure(opp2Fig, dt, oppGuard2, "guard");
-        poseFigure(mateFig, dt, mateSpacer, "spacer");
+        if (pass.phase === "mate" && pass.mateShoots) poseFigure(mateFig, dt, mateOff, "offense");
+        else poseFigure(mateFig, dt, mateSpacer, "spacer", pass.phase === "mate" ? mateHoldBall() : undefined);
       }
     }
     if (offense) {
@@ -990,6 +1202,11 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
       simTime += STEP;
       while (queue.length && queue[0].t <= simTime) {
         const { key, up } = queue.shift()!;
+        if (key === "Pass") {
+          tryPass(simTime);
+          continue;
+        }
+        if (noBall()) continue;
         if (match.active && match.phase === "defense") {
           // On defense Space jumps to block, J / L swipe, I raises the hand (read from the held keys).
           if (up || match.locked) continue;
@@ -1011,7 +1228,7 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
         else pressKey(key);
       }
       const defending = match.active && match.phase === "defense";
-      const dribbling = !defending && dribble.state !== "loose" && dribble.state !== "shot";
+      const dribbling = !defending && (noBall() || (dribble.state !== "loose" && dribble.state !== "shot"));
       // Holding comma backs down: the back to the hoop, as in the post.
       if (held.has("Comma") && !shot.feetLocked && dribbling) commaSince ??= simTime;
       else commaSince = null;
@@ -1019,8 +1236,11 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
       // In the triple-threat hold the feet stay planted but the body turns toward the way WASD points.
       body.holdingBall = !defending && dribble.state === "held";
       body.step(STEP, shot.feetLocked ? still : move, sprint, dribbling, squeak, shot.inHold ? move : undefined);
-      dribble.update(simTime, STEP);
-      shot.update(simTime);
+      if (!noBall()) {
+        dribble.update(simTime, STEP);
+        shot.update(simTime);
+      }
+      stepPass(simTime);
       combo.update(simTime);
     }
     tickSession();
@@ -1042,7 +1262,7 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
       dt,
       elapsed,
       speed: body.speed,
-      dribbling: !defending && dribble.state !== "loose" && dribble.state !== "shot",
+      dribbling: !defending && !noBall() && dribble.state !== "loose" && dribble.state !== "shot",
       split: dribble.split,
       palm: dribble.palmEase,
       lunge: body.lunge,
@@ -1063,8 +1283,16 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
     animateNets();
     updateMeter();
 
-    ball.position.copy(dribble.ball.position);
-    ball.quaternion.copy(dribble.ball.orientation);
+    if (noBall() && pass.phase === "mate") {
+      ball.position.copy(pass.mateShoots ? mateOff.ball : mateHoldBall());
+      ball.rotation.x += dt * 6;
+    } else if (noBall()) {
+      ball.position.copy(passBall.position);
+      ball.quaternion.copy(passBall.orientation);
+    } else {
+      ball.position.copy(dribble.ball.position);
+      ball.quaternion.copy(dribble.ball.orientation);
+    }
     ballShadow.visible = ball.visible;
     ballShadow.position.set(ball.position.x, 0.004, ball.position.z);
     rig.update(dt, subject);
@@ -1209,6 +1437,18 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
           target: TWOS.target,
           mate: tuple((defense ? mateGuard : mateSpacer).position),
           opponents: [tuple((defense ? botOff : botGuard).position), tuple((defense ? oppSpacer : oppGuard2).position)] as TwosSpots,
+        };
+      },
+      pass: (aim?: [number, number]) => tryPass(simTime, aim),
+      get passState() {
+        return {
+          phase: pass.phase,
+          from: pass.from,
+          bounce: pass.bounce,
+          mateShoots: pass.mateShoots,
+          ball: tuple(pass.phase === "mate" ? (pass.mateShoots ? mateOff.ball : mateBall) : passBall.position),
+          velocity: tuple(passBall.velocity),
+          last: pass.last,
         };
       },
       setTwosScore: (us: number, them: number) => {
