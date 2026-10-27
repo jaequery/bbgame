@@ -584,6 +584,7 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
       dribbling: dribble.state !== "loose" && dribble.state !== "shot",
       split: dribble.split,
       palm: dribble.palmEase,
+      lunge: body.lunge,
       hands,
       shoot: shooting
         ? {

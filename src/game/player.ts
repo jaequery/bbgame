@@ -40,6 +40,8 @@ export interface PoseFrame {
   split: number;
   /** 0…1 palming the ball, hunched over it ready to cross over. */
   palm?: number;
+  /** 0…1 lunging forward on a power dribble: knees bent, torso pitched, head lowered. */
+  lunge?: number;
   /** World wrist targets; null = that arm guards. */
   hands: Record<Side, THREE.Vector3 | null>;
   /** Jump-shot pose: `dip` 0…1 knees loading before take-off, `air` 0…1 legs extended off the floor, `lean` torso tilt back (rad, fadeaway), `jab` 0…1 lead foot stepped out, `hunch` 0…1 bent forward over the ball, head kept up on the hoop. */
@@ -208,6 +210,7 @@ export function createPlayer(fonts: GameFonts): Player {
   let lean = 0;
   let jab = 0;
   let hunch = 0;
+  let lunge = 0;
   let upright = 0;
   let palm = 0;
   let ready = false;
@@ -225,6 +228,7 @@ export function createPlayer(fonts: GameFonts): Player {
       lean += ((f.shoot?.lean ?? 0) - lean) * k(18);
       jab += ((f.shoot?.jab ?? 0) - jab) * k(30);
       hunch += ((f.shoot?.hunch ?? 0) - hunch) * k(12);
+      lunge += ((f.lunge ?? 0) - lunge) * k(14);
       palm += ((f.palm ?? 0) - palm) * k(10);
       upright += ((f.shoot ? 1 : 0) - upright) * k(10);
       // One full gait cycle every ~1.5 m.
@@ -234,19 +238,19 @@ export function createPlayer(fonts: GameFonts): Player {
       const bob = Math.sin(f.elapsed * 2.4) * 0.012 * (1 - stride);
       const swing = Math.sin(phase) * 0.55 * stride;
       const lift = 0.9 * stride;
-      const sink = 0.07 * crouch + 0.03 * palm + 0.06 * hunch;
+      const sink = 0.07 * crouch + 0.03 * palm + 0.06 * hunch + 0.08 * lunge;
       // Jumper: knees load on the dip, then the legs straighten and the toes point in the air.
       const load = 0.12 * dip;
       const extend = air;
       hips.position.y = standY + bob - sink - load - Math.abs(Math.cos(phase)) * 0.035 * stride;
-      j.hipL.rotation.x = STANCE.hip - 0.18 * crouch - swing - 0.32 * split + bob - 0.35 * dip + 0.5 * extend - 0.6 * jab;
-      j.hipR.rotation.x = STANCE.hipR - 0.18 * crouch + swing + 0.32 * split + bob - 0.35 * dip + 0.35 * extend;
-      j.kneeL.rotation.x = STANCE.knee + 0.3 * crouch + Math.max(0, Math.cos(phase)) * lift - bob * 2 + 0.55 * dip - 0.7 * extend - 0.25 * jab;
-      j.kneeR.rotation.x = STANCE.knee + 0.3 * crouch + Math.max(0, -Math.cos(phase)) * lift - bob * 2 + 0.55 * dip - 0.6 * extend;
+      j.hipL.rotation.x = STANCE.hip - 0.18 * crouch - 0.25 * lunge - swing - 0.32 * split + bob - 0.35 * dip + 0.5 * extend - 0.6 * jab;
+      j.hipR.rotation.x = STANCE.hipR - 0.18 * crouch - 0.25 * lunge + swing + 0.32 * split + bob - 0.35 * dip + 0.35 * extend;
+      j.kneeL.rotation.x = STANCE.knee + 0.3 * crouch + 0.45 * lunge + Math.max(0, Math.cos(phase)) * lift - bob * 2 + 0.55 * dip - 0.7 * extend - 0.25 * jab;
+      j.kneeR.rotation.x = STANCE.knee + 0.3 * crouch + 0.45 * lunge + Math.max(0, -Math.cos(phase)) * lift - bob * 2 + 0.55 * dip - 0.6 * extend;
       j.ankleL.rotation.x = -0.32 + 0.6 * extend;
       j.ankleR.rotation.x = -0.52 + 0.7 * extend;
-      j.spine.rotation.x = (0.28 + 0.1 * crouch + 0.08 * stride + 0.14 * palm) * (1 - upright) + (0.04 + 0.12 * dip + 0.4 * hunch) * upright - lean;
-      j.neck.rotation.x = -0.25 * (1 - upright) - 0.1 * upright - 0.4 * hunch;
+      j.spine.rotation.x = (0.28 + 0.1 * crouch + 0.08 * stride + 0.14 * palm + 0.25 * lunge) * (1 - upright) + (0.04 + 0.12 * dip + 0.4 * hunch) * upright - lean;
+      j.neck.rotation.x = -0.25 * (1 - upright) - 0.1 * upright - 0.4 * hunch - 0.35 * lunge;
       j.chest.rotation.x = 0.12 + 0.2 * hunch;
       j.head.rotation.x = -0.12 - 0.2 * hunch;
 
