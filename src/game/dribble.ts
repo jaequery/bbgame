@@ -35,7 +35,7 @@ export const DRIBBLE = {
   sprintWindowScale: 0.7,
   sprintScatter: 0.45,
   /** Holding J / L palms the ball this long (s), then it is let go and drops. */
-  palmTime: 1.5,
+  palmTime: 3,
   /** The dropped ball peaks this far above the catch height (a lazy bounce). */
   dropApexMargin: 0.03,
   /** Hold-cross: the player slides this far (m) toward the receiving side. */
