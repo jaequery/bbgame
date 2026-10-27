@@ -6,9 +6,15 @@ import {
   THREE_POINT_CORNER,
   THREE_POINT_RADIUS,
 } from "./dimensions";
-import { DRIBBLE, toWorld, type Body, type DribbleController, type Hand } from "./dribble";
+import { DRIBBLE, toWorld, type Body, type DribbleController, type DribbleKey, type Hand } from "./dribble";
 import type { HoopHit } from "./hoopPhysics";
 
+// A quick tap of Space is a pump fake instead: the ball goes up toward the shot pocket and
+// comes back down into the triple-threat hold, feet on the floor. In the hold the ball is
+// secured in both hands and stays there until the player acts: K jab step, J / L reach the
+// ball out to that side (the hold owns J / L — no palming), Space shoots (or pumps again),
+// and I , U O resume dribbling.
+//
 // The jumper: hold Space (or F for the fadeaway, which leans away from the hoop) to gather the ball into both hands and rise, release
 // at the top. The release only picks a launch velocity — where the ball goes
 // after that (swish, bank, rim out) is the ball physics against the hoop.
@@ -51,6 +57,15 @@ export const SHOT = {
   reboundWaitMade: 0.75,
   reboundWaitMiss: 0.5,
   passTime: 0.8,
+  /** Space released within this long (s) of going down = a tap, i.e. a pump fake. Shorter than gatherTime, so jumper timing is untouched. */
+  tapTime: 0.15,
+  /** Pump fake: the ball goes up toward the shot pocket and comes back down over this long (s). */
+  pumpTime: 0.5,
+  /** Jab step: out and back over this long (s), the lead foot travelling this far (m) toward the rim. */
+  jabTime: 0.4,
+  jabDistance: 0.32,
+  /** Ball extension: arm out to the side and back over this long (s). */
+  extTime: 0.5,
   /** The fadeaway (F): the jumper while falling away from the hoop. */
   fade: {
     /** Backward travel away from the rim over the whole jump (m). */
@@ -64,7 +79,19 @@ export const SHOT = {
   },
 };
 
-export type ShotPhase = "none" | "pickup" | "gather" | "air" | "flight" | "rebound" | "pass";
+export type ShotPhase = "none" | "pickup" | "gather" | "air" | "flight" | "rebound" | "pass" | "pump" | "hold" | "jab" | "ext";
+/** Moves out of the triple-threat hold. */
+export type HoldKind = "pump" | "jab" | "extL" | "extR";
+export const HOLD_NAMES: Record<HoldKind, string> = {
+  pump: "PUMP FAKE!",
+  jab: "JAB STEP!",
+  extL: "LEFT PROBE!",
+  extR: "RIGHT PROBE!",
+};
+/** Phases of the triple-threat hold (ball secured in both hands, no dribble). */
+const HOLD_PHASES: ShotPhase[] = ["pump", "hold", "jab", "ext"];
+/** What a key did in the hold. */
+export type HoldResult = "move" | "exit" | "none";
 export type ReleaseGrade = "perfect" | "early" | "late";
 export type ShotKind = "swish" | "bank" | "rim" | "rim-out" | "board" | "airball";
 
@@ -96,6 +123,10 @@ export interface ShotResult extends ShotRelease {
 export interface ShotEvents {
   /** The ball is in both hands: the dribble is over. */
   gather(): void;
+  /** The gather was a pump fake after all: no jumper is coming. */
+  abort(): void;
+  /** A move out of the hold (pump fake, jab, extension). */
+  hold(move: { kind: HoldKind; from: Hand; to: Hand; timing: "clean" }): void;
   release(r: ShotRelease): void;
   result(r: ShotResult): void;
 }
@@ -104,6 +135,10 @@ type V3 = [number, number, number];
 /** Chest pocket at the bottom of the dip, and the set point over the forehead (standing; local, x: + left). */
 const POCKET: V3 = [-0.04, 1.12, 0.32];
 const SET: V3 = [-0.06, 2.02, 0.2];
+/** Triple threat: ball on the shooting side at the hip, in both hands; the top of a pump fake; and the ball reached out to the left (x: + left). */
+const HOLD: V3 = [-0.12, 0.92, 0.4];
+const PUMP_TOP: V3 = [-0.06, 1.75, 0.3];
+const REACH: V3 = [0.72, 1.0, 0.34];
 /** Where the rebound pass is aimed: chest height, on the right. */
 const PASS_TO: V3 = [-0.36, 1.0, 0.42];
 
@@ -166,7 +201,17 @@ export class ShotController {
   /** 0…1 how far the fadeaway has leaned back (follows the jump). */
   lean = 0;
 
+  /** 0…1 how far the lead foot is stepped out (jab), for the legs. */
+  jabAmount = 0;
+  /** Reaching side of the extension in progress. */
+  extSide: Hand = "L";
+
   private spaceDown = false;
+  private pressAt = -Infinity;
+  private pumpFrom = new THREE.Vector3();
+  private moveAt = 0;
+  private jabApplied = 0;
+  private nextKey: "J" | "K" | "L" | null = null;
   private driftT = 0;
   private lastUpdate = 0;
   private airborne = false;
@@ -193,9 +238,14 @@ export class ShotController {
     return this.phase === "gather" || this.phase === "air";
   }
 
+  /** The triple-threat hold, including the pump fake, jab and reaches that return to it. */
+  get inHold() {
+    return HOLD_PHASES.includes(this.phase);
+  }
+
   /** The feet are planted for the jump or off the floor: no walking. */
   get feetLocked() {
-    return this.holding || this.airborne;
+    return this.holding || this.airborne || this.inHold;
   }
 
   /** Seconds until the apex of the current jump (null when not rising with the ball). */
@@ -214,6 +264,9 @@ export class ShotController {
     this.jumpY = 0;
     this.airborne = false;
     this.spaceDown = false;
+    this.jabAmount = 0;
+    this.jabApplied = 0;
+    this.nextKey = null;
     this.fade = false;
     this.lean = 0;
     this.scored = false;
@@ -223,18 +276,60 @@ export class ShotController {
 
   /** Space (or F, for the fadeaway) went down. */
   press(now: number, fade = false) {
-    if (this.phase !== "none") return;
+    const fromHold = this.inHold;
+    if (this.phase !== "none" && !fromHold) return;
     const s = this.dribble.state;
-    if (s === "loose" || s === "shot" || this.dribble.spinMoving) return; // no jumper out of a spin
+    if (!fromHold && (s === "loose" || s === "shot" || this.dribble.spinMoving)) return; // no jumper out of a spin
     this.spaceDown = true;
+    this.pressAt = now;
     this.fade = fade;
-    if (s === "flight") this.phase = "pickup";
+    this.nextKey = null;
+    if (fromHold) this.gather(now);
+    else if (s === "flight") this.phase = "pickup";
     else this.gather(now);
   }
 
-  /** Space came up: the ball goes at the next substep (or as soon as the feet leave the floor). */
-  lift() {
+  /** Space came up: the ball goes at the next substep (or as soon as the feet leave the floor); a quick tap is a pump fake instead. */
+  lift(now: number) {
     this.spaceDown = false;
+    const early = now - this.pressAt < SHOT.tapTime;
+    if (!early || this.fade) return;
+    if (this.phase === "pickup") this.gather(now);
+    if (this.phase !== "gather") return;
+    this.phase = "pump";
+    this.moveAt = now;
+    this.pumpFrom.copy(this.dribble.ball.position);
+    this.events.abort();
+    this.events.hold({ kind: "pump", from: "R", to: "R", timing: "clean" });
+  }
+
+  /** A dribble key while in the hold: J / K / L are moves out of it, I , U O go back to dribbling. */
+  holdKey(key: DribbleKey, now: number): HoldResult {
+    if (!this.inHold) return "none";
+    if (key === "J" || key === "K" || key === "L") {
+      if (this.phase === "hold") this.startHoldMove(key, now);
+      else if (this.phase !== "pump") this.nextKey = key; // mid-move: acts when the ball is back
+      return "move";
+    }
+    // A way out: the ball goes back to the hand and the key is the dribble move.
+    this.phase = "none";
+    this.jabAmount = 0;
+    this.nextKey = null;
+    this.spaceDown = false;
+    this.dribble.receive("R");
+    return "exit";
+  }
+
+  private startHoldMove(key: "J" | "K" | "L", now: number) {
+    this.moveAt = now;
+    if (key === "K") {
+      this.phase = "jab";
+      this.events.hold({ kind: "jab", from: "L", to: "L", timing: "clean" });
+    } else {
+      this.phase = "ext";
+      this.extSide = key === "J" ? "L" : "R";
+      this.events.hold({ kind: key === "J" ? "extL" : "extR", from: this.extSide, to: this.extSide, timing: "clean" });
+    }
   }
 
   /** A hoop contact during the shot. */
@@ -275,6 +370,39 @@ export class ShotController {
     const ball = this.dribble.ball;
 
     switch (this.phase) {
+      case "pump": {
+        const u = (now - this.moveAt) / SHOT.pumpTime;
+        const top = this.local(PUMP_TOP, 0, this.tmp);
+        const home = this.local(HOLD, 0, this.tmp2);
+        if (u < 0.5) ball.carryTo(home.copy(this.pumpFrom).lerp(top, smooth(u * 2)), 1 / 240);
+        else ball.carryTo(top.lerp(home, smooth(Math.min(1, (u - 0.5) * 2))), 1 / 240);
+        if (u >= 1) this.phase = "hold";
+        break;
+      }
+      case "hold": {
+        ball.carryTo(this.local(HOLD, 0, this.tmp), 1 / 240);
+        break;
+      }
+      case "jab": {
+        const u = Math.min(1, (now - this.moveAt) / SHOT.jabTime);
+        // Quick out, quick back: the lead foot steps toward the rim and returns.
+        this.jabAmount = Math.sin(Math.PI * u);
+        const toRim = this.tmp.set(RIM.x - this.body.position.x, 0, RIM.z - this.body.position.z);
+        if (toRim.lengthSq() > 1e-6) this.body.position.addScaledVector(toRim.normalize(), (this.jabAmount - this.jabApplied) * SHOT.jabDistance);
+        this.jabApplied = this.jabAmount;
+        ball.carryTo(this.local(HOLD, 0, this.tmp), 1 / 240);
+        if (u >= 1) this.endHoldMove(now);
+        break;
+      }
+      case "ext": {
+        const u = Math.min(1, (now - this.moveAt) / SHOT.extTime);
+        const reach = smooth(Math.sin(Math.PI * u));
+        const side = this.extSide === "L" ? 1 : -1;
+        const to: V3 = [HOLD[0] + (side * REACH[0] - HOLD[0]) * reach, HOLD[1] + (REACH[1] - HOLD[1]) * reach, HOLD[2] + (REACH[2] - HOLD[2]) * reach];
+        ball.carryTo(this.local(to, 0, this.tmp), 1 / 240);
+        if (u >= 1) this.endHoldMove(now);
+        break;
+      }
       case "pickup": {
         const s = this.dribble.state;
         if (s === "held" || s === "carry") this.gather(now);
@@ -330,6 +458,16 @@ export class ShotController {
         break;
       }
     }
+  }
+
+  /** A jab or reach is over: back to the hold, and a key pressed meanwhile goes next. */
+  private endHoldMove(now: number) {
+    this.phase = "hold";
+    this.jabAmount = 0;
+    this.jabApplied = 0;
+    const next = this.nextKey;
+    this.nextKey = null;
+    if (next) this.startHoldMove(next, now);
   }
 
   private gather(now: number) {

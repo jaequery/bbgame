@@ -1,6 +1,17 @@
 import { MOVE_NAMES, type Move, type MoveKind } from "./dribble";
 import { hudStore, type Callout } from "./hudStore";
-import type { ShotKind, ShotResult } from "./shot";
+import type { HoldKind, ShotKind, ShotResult } from "./shot";
+import { HOLD_NAMES } from "./shot";
+
+/** Anything that scores as a combo move: a dribble move or a move out of the triple-threat hold. */
+export type ScoredKind = MoveKind | HoldKind;
+/** The part of a move the scorer reads. */
+export interface ScoredMove {
+  kind: ScoredKind;
+  from: string;
+  to: string;
+  timing: Move["timing"];
+}
 
 /** Scoring tuning. */
 export const COMBO = {
@@ -14,7 +25,11 @@ export const COMBO = {
     behind: 200,
     spinL: 180,
     spinR: 180,
-  } satisfies Record<MoveKind, number>,
+    pump: 60,
+    jab: 90,
+    extL: 70,
+    extR: 70,
+  } satisfies Record<ScoredKind, number>,
   /** Each straight repeat of the same move scores this much of the last one. */
   repeatFactor: 0.5,
   /** Early/late (sloppy) contact scores this fraction and does not grow the combo. */
@@ -24,6 +39,8 @@ export const COMBO = {
   /** Made jumper: base points, and what the combo's points are multiplied by when it cashes in. */
   shot: { two: 200, three: 300, cashTwo: 2, cashThree: 3 },
 };
+
+const moveName = (kind: ScoredKind) => (kind in HOLD_NAMES ? HOLD_NAMES[kind as HoldKind] : MOVE_NAMES[kind as MoveKind]);
 
 export const SHOT_CALLOUTS: Record<ShotKind, string> = {
   swish: "SWISH!!",
@@ -43,7 +60,7 @@ export interface ComboSnapshot {
   chain: string[];
   /** Points the moves of the current combo have scored — what a made jumper cashes in. */
   comboPoints: number;
-  lastMove: { kind: MoveKind; from: string; to: string; points: number; timing: string } | null;
+  lastMove: { kind: ScoredKind; from: string; to: string; points: number; timing: string } | null;
   moves: number;
   lastShot: { made: boolean; kind: ShotKind; three: boolean; base: number; cashed: number; multiplier: number; points: number } | null;
 }
@@ -67,7 +84,7 @@ export class ComboScorer {
   /** A jumper is up: the combo doesn't cool off while the ball is in the air. */
   private shotUp = false;
   private repeats = 0;
-  private lastKind: MoveKind | null = null;
+  private lastKind: ScoredKind | null = null;
   private lastAt = -Infinity;
   private calloutId = 0;
 
@@ -77,7 +94,7 @@ export class ComboScorer {
     hudStore.set({ chain: this.chain });
   }
 
-  onMove(move: Move, now: number) {
+  onMove(move: ScoredMove, now: number) {
     if (move.kind === "pound") return; // plain dribbles keep the rhythm, nothing more
     const base = COMBO.points[move.kind];
     let points: number;
@@ -101,14 +118,20 @@ export class ComboScorer {
     this.lastMove = { kind: move.kind, from: move.from, to: move.to, points, timing: move.timing };
     this.publish(
       move.timing === "clean"
-        ? { text: MOVE_NAMES[move.kind], points, tone: "move" }
-        : { text: MOVE_NAMES[move.kind], points, tone: "sloppy", detail: "SLOPPY" },
+        ? { text: moveName(move.kind), points, tone: "move" }
+        : { text: moveName(move.kind), points, tone: "sloppy", detail: "SLOPPY" },
     );
   }
 
   onLost() {
     this.reset();
     this.publish({ text: "LOOSE BALL!!", points: 0, tone: "lost" });
+  }
+
+  /** The gather turned out to be a pump fake: no jumper is coming after all. */
+  onShotAbort(now: number) {
+    this.shotUp = false;
+    this.lastAt = now;
   }
 
   /** The ball was gathered for a jumper. */

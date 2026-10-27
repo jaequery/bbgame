@@ -40,8 +40,8 @@ export interface PoseFrame {
   split: number;
   /** World wrist targets; null = that arm guards. */
   hands: Record<Side, THREE.Vector3 | null>;
-  /** Jump-shot pose: `dip` 0…1 knees loading before take-off, `air` 0…1 legs extended off the floor, `lean` torso tilt back (rad, fadeaway). */
-  shoot?: { dip: number; air: number; lean?: number };
+  /** Jump-shot pose: `dip` 0…1 knees loading before take-off, `air` 0…1 legs extended off the floor, `lean` torso tilt back (rad, fadeaway), `jab` 0…1 lead foot stepped out. */
+  shoot?: { dip: number; air: number; lean?: number; jab?: number };
 }
 
 export interface Player {
@@ -204,6 +204,7 @@ export function createPlayer(fonts: GameFonts): Player {
   let dip = 0;
   let air = 0;
   let lean = 0;
+  let jab = 0;
   let upright = 0;
   let ready = false;
 
@@ -218,6 +219,7 @@ export function createPlayer(fonts: GameFonts): Player {
       dip += ((f.shoot?.dip ?? 0) - dip) * k(20);
       air += ((f.shoot?.air ?? 0) - air) * k(16);
       lean += ((f.shoot?.lean ?? 0) - lean) * k(18);
+      jab += ((f.shoot?.jab ?? 0) - jab) * k(30);
       upright += ((f.shoot ? 1 : 0) - upright) * k(10);
       // One full gait cycle every ~1.5 m.
       phase += (f.speed * f.dt * Math.PI * 2) / 1.5;
@@ -231,9 +233,9 @@ export function createPlayer(fonts: GameFonts): Player {
       const load = 0.12 * dip;
       const extend = air;
       hips.position.y = standY + bob - sink - load - Math.abs(Math.cos(phase)) * 0.035 * stride;
-      j.hipL.rotation.x = STANCE.hip - 0.18 * crouch - swing - 0.32 * split + bob - 0.35 * dip + 0.5 * extend;
+      j.hipL.rotation.x = STANCE.hip - 0.18 * crouch - swing - 0.32 * split + bob - 0.35 * dip + 0.5 * extend - 0.6 * jab;
       j.hipR.rotation.x = STANCE.hipR - 0.18 * crouch + swing + 0.32 * split + bob - 0.35 * dip + 0.35 * extend;
-      j.kneeL.rotation.x = STANCE.knee + 0.3 * crouch + Math.max(0, Math.cos(phase)) * lift - bob * 2 + 0.55 * dip - 0.7 * extend;
+      j.kneeL.rotation.x = STANCE.knee + 0.3 * crouch + Math.max(0, Math.cos(phase)) * lift - bob * 2 + 0.55 * dip - 0.7 * extend - 0.25 * jab;
       j.kneeR.rotation.x = STANCE.knee + 0.3 * crouch + Math.max(0, -Math.cos(phase)) * lift - bob * 2 + 0.55 * dip - 0.6 * extend;
       j.ankleL.rotation.x = -0.32 + 0.6 * extend;
       j.ankleR.rotation.x = -0.52 + 0.7 * extend;
