@@ -19,6 +19,12 @@ export const MOVE = {
   pressFaceHoopTime: 2,
   /** Distance (m) of the power dribble's forward dash. */
   dashDistance: 1.2,
+  /** Crossover fake: the player first shifts this far (m) toward the hand the ball leaves... */
+  fakeDistance: 0.15,
+  /** ...for this long (s)... */
+  fakeTime: 0.1,
+  /** ...then lunges this far (m) the opposite way, with no further input. */
+  crossLunge: 0.75,
   /** Comma held this long (s) turns the player's back to the hoop. */
   backDownDelay: 0.25,
   /** Speed multiplier while backing down. */
@@ -52,6 +58,10 @@ export class Locomotion {
   private readonly slideVel = new THREE.Vector3();
   /** The slide in progress is a power-dribble dash. */
   private dashing = false;
+  /** Crossover lunge waiting for the fake to finish. */
+  private lungeDir: THREE.Vector3 | null = null;
+  private lungeDelay = 0;
+  private lungeDistance = 0;
   /** Spin move: a full turn about Y that comes back to the facing it started from. */
   private spinDir = 0;
   private spinLeft = 0;
@@ -104,6 +114,13 @@ export class Locomotion {
     this.position.addScaledVector(this.velocity, dt);
     this.position.addScaledVector(this.slideVel, dt);
     this.slideVel.multiplyScalar(Math.exp(-MOVE.slideRate * dt));
+    if (this.lungeDir) {
+      this.lungeDelay -= dt;
+      if (this.lungeDelay <= 0) {
+        this.dash(this.lungeDir, this.lungeDistance);
+        this.lungeDir = null;
+      }
+    }
     if (this.dashing && this.slideVel.length() < MOVE.dashDistance * MOVE.slideRate * 0.05) this.dashing = false;
     if (this.spinLeft > 0) {
       this.spinLeft = Math.max(0, this.spinLeft - dt);
@@ -170,6 +187,14 @@ export class Locomotion {
     this.dashing = true;
   }
 
+  /** Crossover: a short fake toward `dir`, then (automatically) a lunge the opposite way. */
+  fakeAndLunge(dir: THREE.Vector3, fake = MOVE.fakeDistance, lunge = MOVE.crossLunge) {
+    this.slide(dir, fake);
+    this.lungeDir = (this.lungeDir ?? new THREE.Vector3()).copy(dir).negate();
+    this.lungeDelay = MOVE.fakeTime;
+    this.lungeDistance = lunge;
+  }
+
   /** 0…1 how far into a power-dribble lunge the body is (crouched, head down): full while the dash is quick, easing out as it dies away. */
   get lunge() {
     if (!this.dashing) return 0;
@@ -202,6 +227,7 @@ export class Locomotion {
     this.velocity.set(0, 0, 0);
     this.slideVel.set(0, 0, 0);
     this.dashing = false;
+    this.lungeDir = null;
     this.spinLeft = 0;
     this.spinAngle = 0;
     this.faceHoopLeft = 0;
