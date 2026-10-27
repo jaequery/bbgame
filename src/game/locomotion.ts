@@ -53,8 +53,9 @@ export class Locomotion {
   /**
    * @param input world-space move direction on the floor (length ≤ 1)
    * @param sprint Shift held
+   * @param heading with the feet planted (`input` is zero): a direction to turn toward on the spot, whatever the hoop-facing
    */
-  step(dt: number, input: THREE.Vector3, sprint: boolean, dribbling: boolean, onSqueak: (speed: number) => void) {
+  step(dt: number, input: THREE.Vector3, sprint: boolean, dribbling: boolean, onSqueak: (speed: number) => void, heading?: THREE.Vector3) {
     const moving = input.lengthSq() > 1e-4;
     this.sprinting = sprint && moving;
     const top = (this.sprinting ? MOVE.sprint : MOVE.walk) * (dribbling ? MOVE.dribbling : 1);
@@ -96,8 +97,9 @@ export class Locomotion {
 
     // Face the way we're going; square up to the hoop when standing.
     this.faceHoopLeft = Math.max(0, this.faceHoopLeft - dt);
-    const target = moving && !this.facingHoop ? Math.atan2(input.x, input.z) : this.hoopYaw;
-    const rate = (this.facingHoop ? MOVE.faceHoopRate : MOVE.turnRate) * dt;
+    const turning = heading !== undefined && heading.lengthSq() > 1e-4;
+    const target = turning ? Math.atan2(heading.x, heading.z) : moving && !this.facingHoop ? Math.atan2(input.x, input.z) : this.hoopYaw;
+    const rate = (this.facingHoop && !turning ? MOVE.faceHoopRate : MOVE.turnRate) * dt;
     let d = target - this.yaw;
     d = Math.atan2(Math.sin(d), Math.cos(d));
     this.yaw += THREE.MathUtils.clamp(d, -rate, rate);

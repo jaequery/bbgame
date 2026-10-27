@@ -12,8 +12,8 @@ import type { HoopHit } from "./hoopPhysics";
 // A quick tap of Space is a pump fake instead: the ball goes up toward the shot pocket and
 // comes back down into the triple-threat hold, feet on the floor. In the hold the ball is
 // secured in both hands and stays there until the player acts: K jab step, J / L reach the
-// ball out to that side (the hold owns J / L — no palming), Space shoots (or pumps again),
-// and I , U O resume dribbling.
+// ball out to that side (the hold owns J / L — no palming), I hunches over the ball with the head
+// down and shields it from the hoop, Space shoots (or pumps again), and , U O resume dribbling.
 //
 // The jumper: hold Space (moving away from the hoop makes it a fadeaway, leaning back) to gather the ball into both hands and rise, release
 // at the top. The release only picks a launch velocity — where the ball goes
@@ -66,6 +66,8 @@ export const SHOT = {
   jabDistance: 0.32,
   /** Ball extension: arm out to the side and back over this long (s). */
   extTime: 0.5,
+  /** Ball protect (I): hunch down, shield the ball away from the hoop and come back up over this long (s). */
+  protectTime: 1,
   /** The fadeaway (Space while moving away from the hoop): the jumper while falling away. */
   fade: {
     /** Move input must point this closely away from the rim (cosine; 0.5 ≈ 60°). */
@@ -81,17 +83,18 @@ export const SHOT = {
   },
 };
 
-export type ShotPhase = "none" | "pickup" | "gather" | "air" | "flight" | "rebound" | "pass" | "pump" | "hold" | "jab" | "ext";
+export type ShotPhase = "none" | "pickup" | "gather" | "air" | "flight" | "rebound" | "pass" | "pump" | "hold" | "jab" | "ext" | "protect";
 /** Moves out of the triple-threat hold. */
-export type HoldKind = "pump" | "jab" | "extL" | "extR";
+export type HoldKind = "pump" | "jab" | "extL" | "extR" | "protect";
 export const HOLD_NAMES: Record<HoldKind, string> = {
   pump: "PUMP FAKE!",
   jab: "JAB STEP!",
   extL: "LEFT PROBE!",
   extR: "RIGHT PROBE!",
+  protect: "PROTECT!",
 };
 /** Phases of the triple-threat hold (ball secured in both hands, no dribble). */
-const HOLD_PHASES: ShotPhase[] = ["pump", "hold", "jab", "ext"];
+const HOLD_PHASES: ShotPhase[] = ["pump", "hold", "jab", "ext", "protect"];
 /** What a key did in the hold. */
 export type HoldResult = "move" | "exit" | "none";
 export type ReleaseGrade = "perfect" | "early" | "late";
@@ -207,13 +210,15 @@ export class ShotController {
   jabAmount = 0;
   /** Reaching side of the extension in progress. */
   extSide: Hand = "L";
+  /** 0…1 how far the hunch over the ball (I) has come down. */
+  protectAmount = 0;
 
   private spaceDown = false;
   private pressAt = -Infinity;
   private pumpFrom = new THREE.Vector3();
   private moveAt = 0;
   private jabApplied = 0;
-  private nextKey: "J" | "K" | "L" | null = null;
+  private nextKey: "I" | "J" | "K" | "L" | null = null;
   private driftT = 0;
   private lastUpdate = 0;
   private airborne = false;
@@ -268,6 +273,7 @@ export class ShotController {
     this.spaceDown = false;
     this.jabAmount = 0;
     this.jabApplied = 0;
+    this.protectAmount = 0;
     this.nextKey = null;
     this.fade = false;
     this.lean = 0;
@@ -312,10 +318,10 @@ export class ShotController {
     this.events.hold({ kind: "pump", from: "R", to: "R", timing: "clean" });
   }
 
-  /** A dribble key while in the hold: J / K / L are moves out of it, I , U O go back to dribbling. */
+  /** A dribble key while in the hold: I / J / K / L are moves out of it, , U O go back to dribbling. */
   holdKey(key: DribbleKey, now: number): HoldResult {
     if (!this.inHold) return "none";
-    if (key === "J" || key === "K" || key === "L") {
+    if (key === "I" || key === "J" || key === "K" || key === "L") {
       if (this.phase === "hold") this.startHoldMove(key, now);
       else if (this.phase !== "pump") this.nextKey = key; // mid-move: acts when the ball is back
       return "move";
@@ -323,15 +329,19 @@ export class ShotController {
     // A way out: the ball goes back to the hand and the key is the dribble move.
     this.phase = "none";
     this.jabAmount = 0;
+    this.protectAmount = 0;
     this.nextKey = null;
     this.spaceDown = false;
     this.dribble.receive("R");
     return "exit";
   }
 
-  private startHoldMove(key: "J" | "K" | "L", now: number) {
+  private startHoldMove(key: "I" | "J" | "K" | "L", now: number) {
     this.moveAt = now;
-    if (key === "K") {
+    if (key === "I") {
+      this.phase = "protect";
+      this.events.hold({ kind: "protect", from: "R", to: "R", timing: "clean" });
+    } else if (key === "K") {
       this.phase = "jab";
       this.events.hold({ kind: "jab", from: "L", to: "L", timing: "clean" });
     } else {
@@ -412,6 +422,14 @@ export class ShotController {
         if (u >= 1) this.endHoldMove(now);
         break;
       }
+      case "protect": {
+        const u = Math.min(1, (now - this.moveAt) / SHOT.protectTime);
+        // Down fast, hold the shield, then back up.
+        this.protectAmount = smooth(Math.min(1, Math.sin(Math.PI * u) * 2));
+        ball.carryTo(this.protectBall(this.protectAmount, this.tmp), 1 / 240);
+        if (u >= 1) this.endHoldMove(now);
+        break;
+      }
       case "pickup": {
         const s = this.dribble.state;
         if (s === "held" || s === "carry") this.gather(now);
@@ -474,6 +492,7 @@ export class ShotController {
     this.phase = "hold";
     this.jabAmount = 0;
     this.jabApplied = 0;
+    this.protectAmount = 0;
     const next = this.nextKey;
     this.nextKey = null;
     if (next) this.startHoldMove(next, now);
@@ -571,6 +590,17 @@ export class ShotController {
     ball.release(v);
     this.phase = "pass";
     this.passStart = now;
+  }
+
+  /** The ball held low on the side of the body away from the hoop, eased out from the hold by `amount`. */
+  private protectBall(amount: number, out: THREE.Vector3) {
+    // Whichever hip is farther from the rim carries the ball (the body's left is (cos yaw, −sin yaw)).
+    const ax = this.body.position.x - RIM.x;
+    const az = this.body.position.z - RIM.z;
+    const side = Math.sign(Math.cos(this.body.yaw) * ax - Math.sin(this.body.yaw) * az) || 1;
+    const to: V3 = [side * 0.5, 0.62, 0.3];
+    const at: V3 = [HOLD[0] + (to[0] - HOLD[0]) * amount, HOLD[1] + (to[1] - HOLD[1]) * amount, HOLD[2] + (to[2] - HOLD[2]) * amount];
+    return this.local(at, 0, out);
   }
 
   /** A body-local point (x: + left, y: height above the floor + `lift`) in world space. */
