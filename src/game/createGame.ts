@@ -250,6 +250,8 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
   /** Instant feedback: the key lights up, the ball pops and the camera kicks on the press itself. */
   const pressFeedback = (key: DribbleKey) => {
     combo.onPress(key);
+    // Every dribble key press squares the player up to the basket and holds it for a couple of seconds.
+    body.faceHoop(MOVE.pressFaceHoopTime);
     playPress(key);
     pop(PRESS_POPS[key], dribble.ball.position, 1);
     rig.kick(key === "J" || key === "L" ? 0.5 : 1);

@@ -15,6 +15,8 @@ export const MOVE = {
   faceHoopRate: 18,
   /** A face-the-hoop move keeps the player squared up this long (s), counted from its last move. */
   faceHoopTime: 0.75,
+  /** Any dribble key press squares the player up to the hoop for this long (s). */
+  pressFaceHoopTime: 2,
   /** A cut sharper than this (rad) at speed squeaks the sneakers. */
   squeakAngle: 1.7,
   squeakMinSpeed: 2.2,
@@ -103,8 +105,8 @@ export class Locomotion {
   }
 
   /** Squares up to the +X hoop for the duration of a move, turning smoothly, whichever way the player is moving. */
-  faceHoop() {
-    this.faceHoopLeft = MOVE.faceHoopTime;
+  faceHoop(time = MOVE.faceHoopTime) {
+    this.faceHoopLeft = Math.max(this.faceHoopLeft, time);
   }
 
   /** A face-the-hoop move is under way. */
