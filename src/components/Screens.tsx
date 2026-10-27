@@ -15,6 +15,8 @@ const MOVE_LABELS: [MoveKind, string][] = [
   ["crossover", "Crossover"],
   ["between", "Between legs"],
   ["behind", "Behind back"],
+  ["spinL", "Left spin"],
+  ["spinR", "Right spin"],
   ["switch", "Switch"],
   ["high", "High dribble"],
 ];

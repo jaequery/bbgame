@@ -4,7 +4,7 @@ import type { ShotKind, ShotResult } from "./shot";
 
 /** Scoring tuning. */
 export const COMBO = {
-  /** Base points per move: switch < crossover < between legs < behind back. */
+  /** Base points per move: switch < crossover < spins < between legs < behind back. */
   points: {
     pound: 0,
     high: 20,
@@ -12,6 +12,8 @@ export const COMBO = {
     crossover: 100,
     between: 150,
     behind: 200,
+    spinL: 180,
+    spinR: 180,
   } satisfies Record<MoveKind, number>,
   /** Each straight repeat of the same move scores this much of the last one. */
   repeatFactor: 0.5,

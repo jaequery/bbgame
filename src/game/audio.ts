@@ -57,7 +57,7 @@ export function playBounce(speed: number) {
 export function playPress(key: string) {
   if (!ctx || !noise || ctx.state !== "running") return;
   const t = ctx.currentTime;
-  const path = key === "I" || key === "K" || key === ",";
+  const path = key === "I" || key === "K" || key === "," || key === "U" || key === "O";
   const out = ctx.createGain();
   out.gain.value = 0.5;
   out.connect(ctx.destination);
