@@ -14,6 +14,7 @@ const CONTROLS: [string, string][] = [
   ["O", "Spin R"],
   ["HOLD J/L", "Palm"],
   ["SPACE", "Shoot"],
+  ["F", "Fadeaway"],
   ["WASD", "Move"],
   ["SHIFT", "Sprint"],
   ["V", "View"],

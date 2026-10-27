@@ -95,6 +95,9 @@ export interface GameDebugHandle {
     /** Seconds to the jump's apex while rising with the ball (null otherwise). */
     apexIn: number | null;
     jumpHeight: number;
+    /** The jump is a fadeaway (F), and how far it has leaned back (0…1). */
+    fade: boolean;
+    lean: number;
     /** Horizontal distance from the player to the +X rim (m). */
     distance: number;
     lastRelease: ShotRelease | null;
@@ -307,7 +310,7 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
 
   // Input: dribble keys are queued with their timestamps and applied in the
   // substep they happened in; WASD/Shift are held state.
-  const queue: { key: DribbleKey | "ShootDown" | "ShootUp"; t: number; up?: boolean }[] = [];
+  const queue: { key: DribbleKey | "ShootDown" | "FadeDown" | "ShootUp"; t: number; up?: boolean }[] = [];
   const held = new Set<string>();
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
@@ -320,12 +323,13 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
     unlockAudio();
     if (e.code === "KeyV") rig.cycle();
     if (e.code === "Space") queue.push({ key: "ShootDown", t: simAt(e.timeStamp / 1000) });
+    if (e.code === "KeyF") queue.push({ key: "FadeDown", t: simAt(e.timeStamp / 1000) });
     const key = KEY_CODES[e.code];
     if (key) queue.push({ key, t: simAt(e.timeStamp / 1000) });
   };
   const onKeyUp = (e: KeyboardEvent) => {
     held.delete(e.code);
-    if (e.code === "Space") queue.push({ key: "ShootUp", t: simAt(e.timeStamp / 1000) });
+    if (e.code === "Space" || e.code === "KeyF") queue.push({ key: "ShootUp", t: simAt(e.timeStamp / 1000) });
     const key = KEY_CODES[e.code];
     if (key) queue.push({ key, t: simAt(e.timeStamp / 1000), up: true });
   };
@@ -497,6 +501,7 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
       while (queue.length && queue[0].t <= simTime) {
         const { key, up } = queue.shift()!;
         if (key === "ShootDown") shot.press(simTime);
+        else if (key === "FadeDown") shot.press(simTime, true);
         else if (key === "ShootUp") shot.lift();
         else if (up) dribble.keyUp(key, simTime);
         else dribble.press(key, simTime);
@@ -528,7 +533,7 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
       split: dribble.split,
       hands,
       shoot: shooting
-        ? { dip: shot.phase === "gather" ? 1 : 0, air: THREE.MathUtils.clamp(shot.jumpY / 0.15, 0, 1) }
+        ? { dip: shot.phase === "gather" ? 1 : 0, air: THREE.MathUtils.clamp(shot.jumpY / 0.15, 0, 1), lean: shot.lean * SHOT.fade.lean }
         : undefined,
     });
     animateNets();
@@ -611,6 +616,8 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
           phase: shot.phase,
           apexIn: apexIn === null ? null : +apexIn.toFixed(4),
           jumpHeight: +shot.jumpY.toFixed(3),
+          fade: shot.fade,
+          lean: +shot.lean.toFixed(3),
           distance: +shot.distanceToRim().toFixed(3),
           lastRelease: shot.lastRelease,
           lastResult: shot.lastResult,
