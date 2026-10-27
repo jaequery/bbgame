@@ -42,7 +42,7 @@ export interface PoseFrame {
   palm?: number;
   /** World wrist targets; null = that arm guards. */
   hands: Record<Side, THREE.Vector3 | null>;
-  /** Jump-shot pose: `dip` 0…1 knees loading before take-off, `air` 0…1 legs extended off the floor, `lean` torso tilt back (rad, fadeaway), `jab` 0…1 lead foot stepped out, `hunch` 0…1 head down and bent over the ball. */
+  /** Jump-shot pose: `dip` 0…1 knees loading before take-off, `air` 0…1 legs extended off the floor, `lean` torso tilt back (rad, fadeaway), `jab` 0…1 lead foot stepped out, `hunch` 0…1 bent forward over the ball, head kept up on the hoop. */
   shoot?: { dip: number; air: number; lean?: number; jab?: number; hunch?: number };
 }
 
@@ -246,9 +246,9 @@ export function createPlayer(fonts: GameFonts): Player {
       j.ankleL.rotation.x = -0.32 + 0.6 * extend;
       j.ankleR.rotation.x = -0.52 + 0.7 * extend;
       j.spine.rotation.x = (0.28 + 0.1 * crouch + 0.08 * stride + 0.14 * palm) * (1 - upright) + (0.04 + 0.12 * dip + 0.4 * hunch) * upright - lean;
-      j.neck.rotation.x = -0.25 * (1 - upright) - 0.1 * upright + 0.6 * hunch;
+      j.neck.rotation.x = -0.25 * (1 - upright) - 0.1 * upright - 0.4 * hunch;
       j.chest.rotation.x = 0.12 + 0.2 * hunch;
-      j.head.rotation.x = -0.12 + 0.35 * hunch;
+      j.head.rotation.x = -0.12 - 0.2 * hunch;
 
       // Arms: a hand on the ball, the other one out guarding it.
       root.updateMatrixWorld(true);
