@@ -126,7 +126,7 @@ try {
   await page.waitForTimeout(800);
 
   // 5. Spins.
-  for (const [key, name] of [["u", "spinL"], ["o", "spinR"]]) {
+  for (const [key, name] of [["u", "spinR"], ["o", "spinL"]]) {
     await page.keyboard.press(key);
     const samples = [];
     for (let i = 0; i < 8; i++) {

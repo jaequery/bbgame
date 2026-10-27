@@ -61,8 +61,8 @@ Full launch/verify procedure: `.claude/skills/verify-app/SKILL.md` (mirrored in 
   `camera`, `cycleView()`, `setView()`, `shot`, `placePlayer()`, `setTimeScale()`. Extend it when you add game state that automation needs.
 - **Controls** (canonical): WASD move · J left hand · L right hand (tap = dribble, hold = palm the
   ball, dropped after 3 s; opposite hand key while palming = hold-cross with a slide) ·
-  I crossover · K between legs · `,` behind back · U left spin · O right spin · Space jumper (hold WASD pointing away from the hoop and it becomes a fadeaway: leans back, tighter timing window) ·
-  V cycle camera (B → A → C). There is no auto-dribble: the ball only moves on a key press.
+  I crossover · K between legs · `,` behind back · U right spin · O left spin · Space jumper (hold WASD pointing away from the hoop and it becomes a fadeaway: leans back, tighter timing window) ·
+  V cycle camera (B → A → C). A ball left untouched in the hand dribbles once after 3 s; otherwise it only moves on a key press.
 - Never commit `.env`; document new env vars in `.env.example`.
 - Next.js here is v16 with Cache Components on — read `node_modules/next/dist/docs/` before
   using an API you haven't checked. A route handler that must run per request calls
