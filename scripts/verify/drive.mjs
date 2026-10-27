@@ -33,6 +33,8 @@ const report = { url, ok: false, views: [], glide: [], consoleErrors };
 try {
   await page.goto(url, { waitUntil: "load" });
   await page.waitForFunction(() => (window.__game?.frames ?? 0) > 5, null, { timeout: 60_000 });
+  // Leave the title screen: game keys only work during a run.
+  await page.evaluate(() => window.__game.startRun("practice"));
   await page.evaluate(() => document.fonts.ready);
   await page.waitForTimeout(800);
   report.world = await page.evaluate(() => window.__game.world);

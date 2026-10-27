@@ -55,6 +55,47 @@
   letter-spacing: 0.04em;
 }
 
+/* Session shot clock, under the title (clear of the centre callouts). */
+.clock {
+  composes: panel;
+  position: absolute;
+  top: 96px;
+  right: 28px;
+  display: grid;
+  justify-items: center;
+  min-width: 132px;
+  padding: 6px 18px 8px;
+  transform: rotate(1.5deg);
+  background: var(--ink);
+  box-shadow: 6px 6px 0 var(--red);
+}
+
+.clockLabel {
+  font-family: var(--font-display), Impact, sans-serif;
+  font-size: 13px;
+  letter-spacing: 0.4em;
+  color: var(--paper);
+}
+
+.clockValue {
+  font-family: var(--font-display), Impact, sans-serif;
+  font-size: 48px;
+  line-height: 1;
+  color: var(--yellow);
+  font-variant-numeric: tabular-nums;
+}
+
+.clockLow .clockValue {
+  color: #ff5a4a;
+  animation: tick 1s steps(2, jump-none) infinite;
+}
+
+@keyframes tick {
+  50% {
+    transform: scale(1.12);
+  }
+}
+
 .combo {
   position: absolute;
   top: 150px;
@@ -492,6 +533,16 @@
 
   .titleEn {
     display: none;
+  }
+
+  .clock {
+    top: 56px;
+    right: 16px;
+    min-width: 96px;
+  }
+
+  .clockValue {
+    font-size: 34px;
   }
 
   .view {

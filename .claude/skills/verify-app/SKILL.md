@@ -54,7 +54,8 @@ bash scripts/verify/doctor.sh            # node, deps, .env, docker, compose sta
 
 ## Drive
 
-- **Routes:** `/` (game), `/api/health` (DB check, 200 or 503).
+- **Routes:** `/` (game; opens on the title screen), `/api/health` (DB check, 200 or 503),
+  `/api/runs` (leaderboard GET top 10 / POST a run).
 - **Keys:** the game listens on `window` keydown, by `event.code`. Playwright:
   `await page.keyboard.press("v")`. Ignore auto-repeat — the game does.
 - **Game state:** dev builds expose `window.__game` (see `src/game/createGame.ts`):
@@ -79,6 +80,9 @@ bash scripts/verify/doctor.sh            # node, deps, .env, docker, compose sta
   each view (`view-B.png`, `view-A.png`, `view-C.png`), presses V three times sampling the camera
   mid-glide, writes `drive-report.json`, exits 0 only if the view order is B → A → C → B with
   intermediate (non-cut) frames. Copy its pattern for new features.
+- **Title screen first:** the page opens on the title overlay and game keys (WASD, J/L/I/K/,
+  Space, V) are ignored until a run starts. Click `[data-testid=start-practice]` or call
+  `window.__game.startRun("practice")` right after the first-frame wait (the drivers do).
 - **Dribbling driver:** `node scripts/verify/dribble.mjs [--url …] [--out artifacts] [--frames all]` —
   every move in B/A/C, walk, loose ball, floor bounds; writes `dribble-report.json` + `moves/`.
 - **Auto-dribble driver:** `node scripts/verify/autodribble.mjs [--url …] [--out artifacts] [--seconds 30]` —
@@ -117,7 +121,7 @@ One file per top feature — how to drive it and what "working" looks like:
 | Dribbling (J/L/I/K/, moves) | [features/dribbling.md](features/dribbling.md) | built |
 | Combo scoring | [features/combo-scoring.md](features/combo-scoring.md) | built |
 | Jumper (Space) | [features/jumper.md](features/jumper.md) | built |
-| Sessions + leaderboard | [features/leaderboard.md](features/leaderboard.md) | stub — BBGA-6MLO1I |
+| Sessions + leaderboard | [features/leaderboard.md](features/leaderboard.md) | built |
 
 When you build one of the stubs, replace its file with real drive steps and extend
 `window.__game` with the state it needs.

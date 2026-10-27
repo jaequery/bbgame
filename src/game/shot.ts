@@ -188,6 +188,17 @@ export class ShotController {
     return Math.hypot(RIM.x - this.body.position.x, RIM.z - this.body.position.z);
   }
 
+  /** New run: drop any shot in progress and put the feet back on the floor. */
+  restart() {
+    this.phase = "none";
+    this.jumpY = 0;
+    this.airborne = false;
+    this.spaceDown = false;
+    this.scored = false;
+    this.rimHits = 0;
+    this.boardHits = 0;
+  }
+
   /** Space went down. */
   press(now: number) {
     if (this.phase !== "none") return;

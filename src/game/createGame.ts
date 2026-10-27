@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { disposeAudio, playBoard, playBounce, playRim, playSqueak, playSwish, unlockAudio } from "./audio";
+import { disposeAudio, playBoard, playBounce, playBuzzer, playRim, playSqueak, playSwish, unlockAudio } from "./audio";
 import { createBall } from "./ball";
 import { BallBody } from "./ballPhysics";
 import { CameraRig, type Subject } from "./cameras";
@@ -23,6 +23,7 @@ import { createHoop } from "./hoop";
 import { HoopCollider } from "./hoopPhysics";
 import { hudStore, type HudState, type ViewId } from "./hudStore";
 import { Locomotion, MOVE } from "./locomotion";
+import { runControl, SessionClock, type PlayMode, type SessionResult } from "./session";
 import { createPlayer, WRIST_ABOVE_BALL, type Side } from "./player";
 import { AIR_TIME, SHOT, ShotController, type ShotPhase, type ShotRelease, type ShotResult } from "./shot";
 import { clearDrawnTextures, redrawWhenFontsLoad, type GameFonts } from "./textures";
@@ -110,6 +111,18 @@ export interface GameDebugHandle {
     target: [number, number, number];
     fov: number;
   };
+  session: {
+    screen: HudState["screen"];
+    mode: PlayMode | null;
+    timeLeft: number | null;
+    bestCombo: number;
+    moves: number;
+    result: SessionResult | null;
+  };
+  /** Same as the title-screen buttons. */
+  startRun(mode: PlayMode): void;
+  /** Automation: set the Session clock to `seconds` left (e.g. 2 to reach the buzzer fast). */
+  setClock(seconds: number): void;
   cycleView(): void;
   setView(view: ViewId): void;
   /** Teleports the player to (x, z) facing the +X hoop with the ball in the right hand (not mid-shot). */
@@ -189,6 +202,7 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
   const rig = new CameraRig(1, subject);
 
   const combo = new ComboScorer();
+  const session = new SessionClock();
   let sfxId = 0;
   const projected = new THREE.Vector3();
   /** Katakana SFX pop at a world position. */
@@ -210,7 +224,10 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
     },
   };
   const dribble = new DribbleController(new BallBody(), bodyView, {
-    move: (m) => combo.onMove(m, simTime),
+    move: (m) => {
+      combo.onMove(m, simTime);
+      session.onMove(m);
+    },
     lost: () => combo.onLost(),
     pickup: () => {},
     bounce: (e) => {
@@ -266,6 +283,9 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
   const held = new Set<string>();
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
+    // Menus own the keyboard (initials entry types letters).
+    if (hudStore.getSnapshot().screen !== "play") return;
+    if (e.code === "Escape") return quitRun();
     if (e.code === "Space") e.preventDefault(); // no page scroll
     held.add(e.code);
     if (e.repeat) return;
@@ -285,6 +305,38 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
   window.addEventListener("blur", onBlur);
 
   hudStore.set({ view: rig.view });
+
+  // Runs: the title screen starts one; the buzzer (or Esc) ends it.
+  const startRun = (mode: PlayMode) => {
+    held.clear();
+    queue.length = 0;
+    body.placeAt(PLAYER_START);
+    camFacing.copy(body.facing);
+    dribble.restart();
+    shot.restart();
+    combo.resetRun();
+    session.start(mode, simTime);
+    hudStore.set({ screen: "play", mode, timeLeft: session.timeLeft(simTime), result: null });
+  };
+  const quitRun = () => {
+    held.clear();
+    session.finish(combo.score);
+    hudStore.set({ screen: "title", mode: null, timeLeft: null });
+  };
+  const unbindRuns = runControl.bind({ start: startRun, quit: quitRun });
+  const tickSession = () => {
+    session.onCombo(combo.combo);
+    const left = session.timeLeft(simTime);
+    if (left === null) return;
+    if (left > 0) {
+      const shown = Math.ceil(left * 10) / 10;
+      if (shown !== hudStore.getSnapshot().timeLeft) hudStore.set({ timeLeft: shown });
+      return;
+    }
+    held.clear();
+    playBuzzer();
+    hudStore.set({ screen: "results", timeLeft: 0, result: session.finish(combo.score) });
+  };
   void redrawWhenFontsLoad(fonts);
 
   const camForward = new THREE.Vector3();
@@ -420,6 +472,7 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
       shot.update(simTime);
       combo.update(simTime);
     }
+    tickSession();
 
     player.root.position.y = shot.jumpY;
     player.root.rotation.y = body.yaw;
@@ -544,6 +597,21 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
           fov: +rig.camera.fov.toFixed(2),
         };
       },
+      get session() {
+        const hud = hudStore.getSnapshot();
+        return {
+          screen: hud.screen,
+          mode: session.mode,
+          timeLeft: session.timeLeft(simTime),
+          bestCombo: session.bestCombo,
+          moves: session.moves,
+          result: hud.result,
+        };
+      },
+      startRun,
+      setClock: (seconds: number) => {
+        session.endsAt = simTime + seconds;
+      },
       cycleView: () => rig.cycle(),
       setView: (view: ViewId) => rig.setView(view),
       placePlayer: (x: number, z: number) => {
@@ -563,6 +631,7 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
   return {
     dispose() {
       renderer.setAnimationLoop(null);
+      unbindRuns();
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("blur", onBlur);

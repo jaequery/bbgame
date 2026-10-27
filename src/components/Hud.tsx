@@ -14,6 +14,7 @@ const CONTROLS: [string, string][] = [
   ["WASD", "Move"],
   ["SHIFT", "Sprint"],
   ["V", "View"],
+  ["ESC", "Menu"],
 ];
 
 const CHAIN_SLOTS = 4;
@@ -33,8 +34,22 @@ export default function Hud() {
         <span className={styles.scoreValue} data-testid="hud-score">
           {fmt.format(hud.score)}
         </span>
-        <span className={styles.best}>BEST {fmt.format(hud.best)}</span>
+        <span className={styles.best} data-testid="hud-best">
+          BEST {fmt.format(hud.topScore)}
+        </span>
       </section>
+
+      {hud.screen === "play" && hud.timeLeft !== null && (
+        <section
+          className={`${styles.clock} ${hud.timeLeft <= 10 ? styles.clockLow : ""}`}
+          aria-label="Session clock"
+        >
+          <span className={styles.clockLabel}>TIME</span>
+          <span className={styles.clockValue} data-testid="hud-clock">
+            {hud.timeLeft.toFixed(1)}
+          </span>
+        </section>
+      )}
 
       <section className={styles.combo} aria-label="Combo">
         <span className={styles.comboValue} data-testid="hud-combo">

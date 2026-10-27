@@ -79,6 +79,29 @@ export function playSqueak(speed: number) {
   osc.stop(t + dur + 0.02);
 }
 
+/** Gym scoreboard buzzer: a nasal square-wave honk. */
+export function playBuzzer() {
+  if (!ctx || ctx.state !== "running") return;
+  const t = ctx.currentTime;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(0.18, t + 0.02);
+  g.gain.setValueAtTime(0.18, t + 0.85);
+  g.gain.linearRampToValueAtTime(0, t + 0.95);
+  const lp = ctx.createBiquadFilter();
+  lp.type = "lowpass";
+  lp.frequency.value = 1400;
+  lp.connect(g).connect(ctx.destination);
+  for (const f of [196, 247]) {
+    const osc = ctx.createOscillator();
+    osc.type = "square";
+    osc.frequency.value = f;
+    osc.connect(lp);
+    osc.start(t);
+    osc.stop(t + 1);
+  }
+}
+
 /** Ball through the net: a soft brushed-noise "shhk" sweeping down. */
 export function playSwish() {
   if (!ctx || !noise || ctx.state !== "running") return;

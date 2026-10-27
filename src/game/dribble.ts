@@ -205,6 +205,28 @@ export class DribbleController {
     this.ball.kinematic = true;
   }
 
+  /** Start of a run: ball back in the right hand, nothing in flight. Call after moving the body. */
+  restart() {
+    this.state = "held";
+    this.hand = "R";
+    this.heightMode = "low";
+    this.split = 0;
+    this.splitUntil = 0;
+    this.roll = [];
+    this.pending = null;
+    this.lastMove = null;
+    this.lastTiming = null;
+    this.contactTiming = "clean";
+    this.contactError = 0;
+    this.windowScale = 1;
+    this.looseAt = -Infinity;
+    this.catchLocal = anchor("R", DRIBBLE.lowHeight);
+    this.ball.velocity.set(0, 0, 0);
+    this.ball.spin.set(0, 0, 0);
+    this.ball.kinematic = true;
+    this.holdPoint(this.ball.position);
+  }
+
   /** Seconds until the ideal catch (flight only). */
   catchIn(now: number): number | null {
     return this.state === "flight" ? this.catchAt - now : null;

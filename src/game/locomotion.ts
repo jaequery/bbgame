@@ -77,6 +77,14 @@ export class Locomotion {
     this.facing.set(Math.sin(this.yaw), 0, Math.cos(this.yaw));
   }
 
+  /** Stand still at `at`, squared up to the +X hoop. */
+  placeAt(at: THREE.Vector3) {
+    this.position.copy(at);
+    this.velocity.set(0, 0, 0);
+    this.yaw = Math.atan2(HOOP_X - at.x, -at.z);
+    this.facing.set(Math.sin(this.yaw), 0, Math.cos(this.yaw));
+  }
+
   get speed() {
     return Math.hypot(this.velocity.x, this.velocity.z);
   }

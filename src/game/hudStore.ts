@@ -1,5 +1,8 @@
 // Tiny external store shared by the three.js loop and the React HUD.
-// The dribble/combo/shot code writes score, combo, chain, callouts, SFX pops and the shot meter here.
+// The dribble/combo/shot code writes score, combo, chain, callouts, SFX pops and the
+// shot meter here; the session clock writes the screen, mode and time left.
+
+import type { PlayMode, SessionResult } from "./session";
 
 export type ViewId = "A" | "B" | "C";
 
@@ -43,6 +46,9 @@ export interface SfxPop {
   strength: number;
 }
 
+/** Which overlay is up. Game keys only work on "play". */
+export type Screen = "title" | "play" | "results" | "leaderboard";
+
 export interface HudState {
   score: number;
   best: number;
@@ -52,9 +58,31 @@ export interface HudState {
   callout: Callout | null;
   sfx: SfxPop | null;
   meter: ShotMeter | null;
+  screen: Screen;
+  mode: PlayMode | null;
+  /** Session clock (seconds, tenths); null outside a Session. */
+  timeLeft: number | null;
+  /** All-time top score from the leaderboard (HUD BEST). */
+  topScore: number;
+  /** Last finished Session, for the results screen. */
+  result: SessionResult | null;
 }
 
-let state: HudState = { score: 0, best: 0, combo: 0, chain: [], view: "B", callout: null, sfx: null, meter: null };
+let state: HudState = {
+  score: 0,
+  best: 0,
+  combo: 0,
+  chain: [],
+  view: "B",
+  callout: null,
+  sfx: null,
+  screen: "title",
+  mode: null,
+  timeLeft: null,
+  topScore: 0,
+  result: null,
+  meter: null,
+};
 const listeners = new Set<() => void>();
 
 export const hudStore = {

@@ -138,6 +138,20 @@ export class ComboScorer {
     }
   }
 
+  /** Fresh run: score, combo, chain and shot state back to zero. */
+  resetRun() {
+    this.reset();
+    this.score = 0;
+    this.best = 0;
+    this.lastMove = null;
+    this.lastShot = null;
+    this.moves = 0;
+    this.shotUp = false;
+    this.lastAt = -Infinity;
+    this.publish(null);
+    hudStore.set({ callout: null });
+  }
+
   snapshot(): ComboSnapshot {
     return {
       score: this.score,

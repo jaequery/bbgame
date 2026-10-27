@@ -67,12 +67,19 @@ async function roll(keys) {
   }
 }
 
+/**
+ * Game-clock speed for the run. On a slow headless renderer (few frames a second)
+ * frame-polled key presses land late, so the driver plays at half speed there:
+ * the timing windows run on game time, so they are the same windows.
+ */
+let playScale = 1;
+
 /** Freezes the game clock for a screenshot so captures don't break the rhythm. */
 async function frozenShot(file) {
   await game(() => window.__game.setTimeScale(0));
   await page.waitForTimeout(60);
   await page.screenshot({ path: file });
-  await game(() => window.__game.setTimeScale(1));
+  await game((s) => window.__game.setTimeScale(s), playScale);
 }
 
 async function shootAt(simTarget, file) {
@@ -81,7 +88,7 @@ async function shootAt(simTarget, file) {
 }
 
 /** Walks (camera-relative WASD) onto the loose ball until it is picked up. */
-async function recover(timeoutMs = 12_000) {
+async function recover(timeoutMs = 12_000 / playScale) {
   const start = Date.now();
   const down = new Set();
   const set = async (key, on) => {
@@ -238,7 +245,7 @@ async function walkWhileDribbling(seconds) {
   const start = await game(() => window.__game.player.position);
   const key = await keyTowardCentre();
   await page.keyboard.down(key);
-  const until = Date.now() + seconds * 1000;
+  const until = Date.now() + (seconds * 1000) / playScale;
   let lost = false;
   try {
     while (Date.now() < until) {
@@ -263,8 +270,16 @@ async function walkWhileDribbling(seconds) {
 try {
   await page.goto(url, { waitUntil: "load" });
   await page.waitForFunction(() => (window.__game?.frames ?? 0) > 5, null, { timeout: 60_000 });
+  // Leave the title screen: game keys only work during a run.
+  await page.evaluate(() => window.__game.startRun("practice"));
   await page.evaluate(() => document.fonts.ready);
   await page.waitForTimeout(800);
+  const f0 = await game(() => window.__game.frames);
+  await page.waitForTimeout(1000);
+  report.fps = (await game(() => window.__game.frames)) - f0;
+  if (report.fps < 30) playScale = 0.5;
+  report.timeScale = playScale;
+  await game((s) => window.__game.setTimeScale(s), playScale);
   await frozenShot(path.join(out, "dribble-start.png"));
 
   const pts = await game(() => window.__game.config.points);
@@ -324,7 +339,7 @@ try {
   // Floor bounds: sprint straight ahead (view B) for 8 s — far enough to hit an edge from anywhere.
   await page.keyboard.down("Shift");
   await page.keyboard.down("w");
-  await page.waitForTimeout(8_000);
+  await page.waitForTimeout(8_000 / playScale);
   const bounds = await game(() => ({ p: window.__game.player.position, floor: window.__game.world.floor }));
   await frozenShot(path.join(out, "bounds.png"));
   await page.keyboard.up("w");
