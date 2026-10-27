@@ -65,6 +65,7 @@ Full launch/verify procedure: `.claude/skills/verify-app/SKILL.md` (mirrored in 
   sprint (Shift) at the hoop + Space = running finish, which beats the pump fake and the jumper: a layup within `SHOT.finish.layupRange` (running one-hand take-off, released at the top, can miss), a dunk within `SHOT.finish.dunkRange` (always scores) ·
   triple-threat hold (after a pump fake; ball in both hands until you act): WASD turns the player on the spot toward that direction · K jab step (hold it: the foot stays out) · J / L reach the ball out left / right (J/L mean reach here, not palm) · I hunch over the ball, head down, shielding it from the hoop (hold it) · I, K and a reach combine · Space jumper or pump again · `,` U O resume dribbling ·
   V cycle camera (B → A → C). A ball left untouched in the hand dribbles once after 3 s; otherwise it only moves on a key press.
+  Travelling: once the dribble ends and the ball rests in the hand, only two steps are allowed (`MOVE.maxSteps` × `MOVE.stepLength`); the third is blocked until a new dribble starts (count resets).
 - Never commit `.env`; document new env vars in `.env.example`.
 - Next.js here is v16 with Cache Components on — read `node_modules/next/dist/docs/` before
   using an API you haven't checked. A route handler that must run per request calls
