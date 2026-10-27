@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { disposeAudio, playBoard, playBounce, playBuzzer, playRim, playSqueak, playSwish, unlockAudio } from "./audio";
+import { disposeAudio, playBoard, playBounce, playBuzzer, playPress, playRim, playSqueak, playSwish, unlockAudio } from "./audio";
 import { createBall } from "./ball";
 import { BallBody } from "./ballPhysics";
 import { CameraRig, type Subject } from "./cameras";
@@ -140,6 +140,9 @@ declare global {
   }
 }
 
+/** Katakana pop at the ball for each dribble key, the moment it is pressed. */
+const PRESS_POPS: Record<DribbleKey, string> = { J: "パシッ", L: "パシッ", I: "シャッ", K: "ズバッ", ",": "ヒュッ" };
+
 const KEY_CODES: Record<string, DribbleKey> = {
   KeyJ: "J",
   KeyL: "L",
@@ -227,6 +230,13 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
     move: (m) => {
       combo.onMove(m, simTime);
       session.onMove(m);
+    },
+    press: (key) => {
+      // Instant feedback: the key lights up, the ball pops and the camera kicks on the press itself.
+      combo.onPress(key);
+      playPress(key);
+      pop(PRESS_POPS[key], dribble.ball.position, 1);
+      rig.kick(key === "J" || key === "L" ? 0.5 : 1);
     },
     lost: () => combo.onLost(),
     pickup: () => {},

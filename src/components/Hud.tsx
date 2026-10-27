@@ -58,7 +58,10 @@ export default function Hud() {
         <span className={styles.comboLabel}>COMBO</span>
         <ol className={styles.chain} aria-label="Key chain">
           {Array.from({ length: CHAIN_SLOTS }, (_, i) => (
-            <li key={i} className={chain[i] ? styles.chainKey : styles.chainEmpty}>
+            <li
+              key={`${i}:${hud.chain.length}`}
+              className={chain[i] ? `${styles.chainKey} ${i === chain.length - 1 ? styles.chainHit : ""}` : styles.chainEmpty}
+            >
               {chain[i] ?? ""}
             </li>
           ))}

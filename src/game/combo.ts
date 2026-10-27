@@ -69,6 +69,12 @@ export class ComboScorer {
   private lastAt = -Infinity;
   private calloutId = 0;
 
+  /** A dribble key was pressed: it lights up in the HUD chain the same frame. */
+  onPress(key: string) {
+    this.chain = [...this.chain, key].slice(-8);
+    hudStore.set({ chain: this.chain });
+  }
+
   onMove(move: Move, now: number) {
     if (move.kind === "pound") return; // plain dribbles keep the rhythm, nothing more
     const base = COMBO.points[move.kind];
@@ -90,7 +96,6 @@ export class ComboScorer {
     this.score += points;
     this.comboPoints += points;
     this.best = Math.max(this.best, this.score);
-    this.chain = [...this.chain, ...move.keys].slice(-8);
     this.lastMove = { kind: move.kind, from: move.from, to: move.to, points, timing: move.timing };
     this.publish(
       move.timing === "clean"

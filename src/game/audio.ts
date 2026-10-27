@@ -53,6 +53,39 @@ export function playBounce(speed: number) {
   slap.start(t, Math.random() * 0.9, 0.06);
 }
 
+/** The hand slapping the ball on a dribble key press: a short, punchy snap, higher for the fancier path keys. */
+export function playPress(key: string) {
+  if (!ctx || !noise || ctx.state !== "running") return;
+  const t = ctx.currentTime;
+  const path = key === "I" || key === "K" || key === ",";
+  const out = ctx.createGain();
+  out.gain.value = 0.5;
+  out.connect(ctx.destination);
+
+  const snap = ctx.createBufferSource();
+  snap.buffer = noise;
+  const bp = ctx.createBiquadFilter();
+  bp.type = "bandpass";
+  bp.frequency.value = path ? 3200 : 2000;
+  bp.Q.value = 1.2;
+  const snapGain = ctx.createGain();
+  snapGain.gain.setValueAtTime(0.9, t);
+  snapGain.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
+  snap.connect(bp).connect(snapGain).connect(out);
+  snap.start(t, Math.random() * 0.9, 0.08);
+
+  const tone = ctx.createOscillator();
+  tone.type = "triangle";
+  tone.frequency.setValueAtTime(path ? 520 : 340, t);
+  tone.frequency.exponentialRampToValueAtTime(path ? 180 : 120, t + 0.09);
+  const toneGain = ctx.createGain();
+  toneGain.gain.setValueAtTime(0.5, t);
+  toneGain.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+  tone.connect(toneGain).connect(out);
+  tone.start(t);
+  tone.stop(t + 0.12);
+}
+
 /** Sneaker squeak on a hard cut: a rubbery chirp sweeping up. */
 export function playSqueak(speed: number) {
   if (!ctx || ctx.state !== "running") return;
