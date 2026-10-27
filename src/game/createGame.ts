@@ -92,6 +92,9 @@ export interface GameDebugHandle {
   hud: HudState;
   shot: {
     phase: ShotPhase;
+    /** The triple-threat hold (pump fake, hold, jab, reach), and how far the jab has stepped out (0…1). */
+    inHold: boolean;
+    jab: number;
     /** Seconds to the jump's apex while rising with the ball (null otherwise). */
     apexIn: number | null;
     jumpHeight: number;
@@ -244,6 +247,15 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
     },
   };
   const slideDir = new THREE.Vector3();
+  /** Instant feedback: the key lights up, the ball pops and the camera kicks on the press itself. */
+  const pressFeedback = (key: DribbleKey) => {
+    combo.onPress(key);
+    // Every dribble key press squares the player up to the basket and holds it for a couple of seconds.
+    body.faceHoop(MOVE.pressFaceHoopTime);
+    playPress(key);
+    pop(PRESS_POPS[key], dribble.ball.position, 1);
+    rig.kick(key === "J" || key === "L" ? 0.5 : 1);
+  };
   const dribble = new DribbleController(new BallBody(), bodyView, {
     move: (m) => {
       combo.onMove(m, simTime);
@@ -251,15 +263,7 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
       // Crossovers (and hold-crosses), between the legs and behind the back are played facing the basket.
       if (m.kind === "crossover" || m.kind === "between" || m.kind === "behind") body.faceHoop();
     },
-    press: (key) => {
-      // Instant feedback: the key lights up, the ball pops and the camera kicks on the press itself.
-      combo.onPress(key);
-      // Every dribble key press squares the player up to the basket and holds it for a couple of seconds.
-      body.faceHoop(MOVE.pressFaceHoopTime);
-      playPress(key);
-      pop(PRESS_POPS[key], dribble.ball.position, 1);
-      rig.kick(key === "J" || key === "L" ? 0.5 : 1);
-    },
+    press: (key) => pressFeedback(key),
     lost: () => combo.onLost(),
     pickup: () => {},
     slide: (side) => {
@@ -276,6 +280,14 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
   });
   const shot = new ShotController(dribble, bodyView, {
     gather: () => combo.onShotStart(),
+    abort: () => combo.onShotAbort(simTime),
+    hold: (m) => {
+      combo.onMove(m, simTime);
+      if (m.kind === "pump") {
+        playPress("I");
+        pop("ブンッ", dribble.ball.position, 0.8);
+      }
+    },
     release: () => {},
     result: (r) => combo.onShot(r, simTime),
   });
@@ -384,6 +396,15 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
   };
   void redrawWhenFontsLoad(fonts);
 
+  /** In the triple-threat hold J / K / L are moves out of it; the other dribble keys leave it and dribble. */
+  const pressKey = (key: DribbleKey) => {
+    if (shot.inHold) {
+      const result = shot.holdKey(key, simTime);
+      if (result === "move") return pressFeedback(key);
+    }
+    dribble.press(key, simTime);
+  };
+
   const camForward = new THREE.Vector3();
   const camRight = new THREE.Vector3();
   const input = new THREE.Vector3();
@@ -409,7 +430,12 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
   const aimHands = (now: number) => {
     hands.L = hands.R = null;
     const b = dribble.ball;
-    if (shot.holding) {
+    if (shot.phase === "ext") {
+      // The reaching hand carries the ball out; the other one guards.
+      hands[shot.extSide] = onBall(shot.extSide);
+      return;
+    }
+    if (shot.holding || shot.inHold) {
       // Guide hand on the side of the ball, shooting hand under and behind it.
       hands.L = offsetFrom(b.position, 0.15, -0.02, -0.03, handTargets.L);
       hands.R = offsetFrom(b.position, -0.03, -0.1, -0.11, handTargets.R);
@@ -508,9 +534,9 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
       while (queue.length && queue[0].t <= simTime) {
         const { key, up } = queue.shift()!;
         if (key === "ShootDown") shot.press(simTime, move);
-        else if (key === "ShootUp") shot.lift();
+        else if (key === "ShootUp") shot.lift(simTime);
         else if (up) dribble.keyUp(key, simTime);
-        else dribble.press(key, simTime);
+        else pressKey(key);
       }
       const dribbling = dribble.state !== "loose" && dribble.state !== "shot";
       body.step(STEP, shot.feetLocked ? still : move, sprint, dribbling, squeak);
@@ -530,7 +556,7 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
     }
     playerShadow.position.set(body.position.x, 0.003, body.position.z);
     aimHands(simTime);
-    const shooting = shot.holding || shot.jumpY > 0 || simTime - shot.releasedAt < 0.45;
+    const shooting = shot.holding || shot.inHold || shot.jumpY > 0 || simTime - shot.releasedAt < 0.45;
     player.animate({
       dt,
       elapsed,
@@ -540,7 +566,12 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
       palm: dribble.palmEase,
       hands,
       shoot: shooting
-        ? { dip: shot.phase === "gather" ? 1 : 0, air: THREE.MathUtils.clamp(shot.jumpY / 0.15, 0, 1), lean: shot.lean * SHOT.fade.lean }
+        ? {
+            dip: shot.phase === "gather" ? 1 : shot.inHold ? 0.6 : 0,
+            air: THREE.MathUtils.clamp(shot.jumpY / 0.15, 0, 1),
+            lean: shot.lean * SHOT.fade.lean,
+            jab: shot.jabAmount,
+          }
         : undefined,
     });
     animateNets();
@@ -621,6 +652,8 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
         const apexIn = shot.apexIn(simAt(performance.now() / 1000));
         return {
           phase: shot.phase,
+          inHold: shot.inHold,
+          jab: +shot.jabAmount.toFixed(3),
           apexIn: apexIn === null ? null : +apexIn.toFixed(4),
           jumpHeight: +shot.jumpY.toFixed(3),
           fade: shot.fade,
