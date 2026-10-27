@@ -168,6 +168,8 @@ export interface GameDebugHandle {
     mate: [number, number, number];
     opponents: TwosSpots;
   };
+  /** Automation: set the 2v2 team scores (e.g. 10 to be one basket from the win). */
+  setTwosScore(us: number, them: number): void;
   /** Automation: the bot goes up for its shot now (defense). */
   botShoot(): void;
   /** Same as the title-screen buttons. */
@@ -1208,6 +1210,11 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
           mate: tuple((defense ? mateGuard : mateSpacer).position),
           opponents: [tuple((defense ? botOff : botGuard).position), tuple((defense ? oppSpacer : oppGuard2).position)] as TwosSpots,
         };
+      },
+      setTwosScore: (us: number, them: number) => {
+        match.you = us;
+        match.bot = them;
+        publishDuel();
       },
       botShoot: () => botOff.shootNow(simTime),
       startRun,
