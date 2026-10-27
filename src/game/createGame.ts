@@ -16,6 +16,7 @@ import {
   FLOOR_MIN_Z,
   HOOP_X,
   RIM_HEIGHT,
+  THREE_POINT_RADIUS,
 } from "./dimensions";
 import { DRIBBLE, DribbleController, toWorld, type DribbleKey, type DribbleState, type Hand } from "./dribble";
 import { createGym } from "./gym";
@@ -23,9 +24,9 @@ import { createHoop } from "./hoop";
 import { HoopCollider } from "./hoopPhysics";
 import { hudStore, type Callout, type HudState, type ViewId } from "./hudStore";
 import { Locomotion, MOVE } from "./locomotion";
-import { BotGuard, BotOffense, Defender, DUEL, separate, type OffenseEvents } from "./duel";
+import { BotGuard, BotOffense, BotSpacer, BOT_HOOP, Defender, DUEL, PLAYER_HOOP, separate, TWOS, type OffenseEvents } from "./duel";
 import { runControl, SessionClock, type PlayMode, type SessionResult } from "./session";
-import { createPlayer, WRIST_ABOVE_BALL, type Look, type Side } from "./player";
+import { createPlayer, HERO_LOOK, WRIST_ABOVE_BALL, type Look, type Side } from "./player";
 import { AIR_TIME, SHOT, ShotController, type FinishKind, type ShotPhase, type ShotRelease, type ShotResult } from "./shot";
 import { clearDrawnTextures, redrawWhenFontsLoad, type GameFonts } from "./textures";
 import { setOutlineResolution } from "./toon";
@@ -36,6 +37,8 @@ export const PLAYER_START = new THREE.Vector3(4.2, 0, 0.6);
 export interface Game {
   dispose(): void;
 }
+
+type TwosSpots = [[number, number, number], [number, number, number]];
 
 /** Dev-only debug handle exposed as `window.__game` for automation. */
 export interface GameDebugHandle {
@@ -155,6 +158,16 @@ export interface GameDebugHandle {
     jumpY: number;
     raise: number;
   };
+  /** 2v2: team scores, target, and where the four players are. */
+  twos: {
+    active: boolean;
+    phase: "offense" | "defense";
+    us: number;
+    them: number;
+    target: number;
+    mate: [number, number, number];
+    opponents: TwosSpots;
+  };
   /** Automation: the bot goes up for its shot now (defense). */
   botShoot(): void;
   /** Same as the title-screen buttons. */
@@ -199,6 +212,19 @@ const tuple = (v: THREE.Vector3): [number, number, number] => [
 
 /** The bot's kit: blue, so it reads apart from the red player. */
 const BOT_LOOK: Look = { jersey: 0x2a5fd0, trim: 0xfaf4e6, hair: 0x1a1410, shoe: 0x1f3f9a, number: "7" };
+const BOT2_LOOK: Look = { ...BOT_LOOK, hair: 0x7a4a1e, number: "11" };
+/** Your 2v2 teammate wears your kit. */
+const MATE_LOOK: Look = { ...HERO_LOOK, hair: 0x6b3a1a, number: "5" };
+
+/** A bot's model with its shadow and hand targets. */
+interface Figure {
+  model: ReturnType<typeof createPlayer>;
+  shadow: THREE.Mesh;
+  hands: Record<Side, THREE.Vector3 | null>;
+  targets: Record<Side, THREE.Vector3>;
+  base: THREE.Vector3;
+  yaw: number;
+}
 
 export function createGame(container: HTMLElement, fonts: GameFonts): Game {
   const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
@@ -238,13 +264,27 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
   const ballShadow = blobShadow(BALL_RADIUS * 1.3, new THREE.Vector3());
   scene.add(ballShadow);
 
-  // The bot (1v1 and the defense drill): its own model, ball and shadows, hidden outside those modes.
-  const botModel = createPlayer(fonts, BOT_LOOK);
-  botModel.root.visible = false;
-  scene.add(botModel.root);
-  const botShadow = blobShadow(0.55, new THREE.Vector3());
-  botShadow.visible = false;
-  scene.add(botShadow);
+  // The bots (1v1, the defense drill and 2v2): own models, ball and shadows, hidden outside those modes.
+  const makeFigure = (look: Look): Figure => {
+    const model = createPlayer(fonts, look);
+    model.root.visible = false;
+    scene.add(model.root);
+    const shadow = blobShadow(0.55, new THREE.Vector3());
+    shadow.visible = false;
+    scene.add(shadow);
+    return {
+      model,
+      shadow,
+      hands: { L: null, R: null },
+      targets: { L: new THREE.Vector3(), R: new THREE.Vector3() },
+      base: new THREE.Vector3(),
+      yaw: 0,
+    };
+  };
+  /** In 2v2: opp1 is the first opponent (also the 1v1 bot), opp2 the second, mate your teammate. */
+  const botFig = makeFigure(BOT_LOOK);
+  const opp2Fig = makeFigure(BOT2_LOOK);
+  const mateFig = makeFigure(MATE_LOOK);
   const botBall = createBall();
   botBall.visible = false;
   scene.add(botBall);
@@ -328,7 +368,7 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
     gather: () => {
       combo.onShotStart();
       // The bot goes up at your shot if it is on you.
-      if (match.active && match.phase === "offense" && distanceToBot() < DUEL.bot.block.contestRange) botGuard.contest(simTime);
+      if (match.active && match.phase === "offense" && distanceToBot() < DUEL.bot.block.contestRange) nearestGuard().contest(simTime);
     },
     abort: () => combo.onShotAbort(simTime),
     hold: (m) => {
@@ -339,7 +379,7 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
     },
     release: (r) => {
       // The bot's jump can swat a jumper (not a dunk, which goes over it).
-      if (match.active && match.phase === "offense" && r.finish !== "dunk" && botGuard.blocks(distanceToBot())) {
+      if (match.active && match.phase === "offense" && r.finish !== "dunk" && nearestGuard().blocks(distanceToBot())) {
         const v = dribble.ball.velocity;
         v.set(-v.x * 0.25 + (Math.random() - 0.5), 2.4, (Math.random() - 0.5) * 3);
         pop("バシッ", dribble.ball.position, 1);
@@ -356,8 +396,8 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
       combo.onShot(r, simTime);
       if (!match.active || match.phase !== "offense" || match.switchAt !== null) return;
       if (r.made) {
-        match.you += DUEL.basket;
-        note("BUCKET!", "shot", scoreLine());
+        match.you += twos() ? (r.three ? 2 : 1) : DUEL.basket;
+        note(twos() && r.three ? "THREE!" : "BUCKET!", "shot", scoreLine());
       } else {
         note("NO GOOD", "miss", scoreLine());
       }
@@ -440,7 +480,7 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
   // 1v1 and the defense drill: the ball changes hands after every basket, miss, stop and steal.
   const match = {
     active: false,
-    mode: "duel" as "duel" | "defense",
+    mode: "duel" as "duel" | "defense" | "twos",
     phase: "offense" as "offense" | "defense",
     you: 0,
     bot: 0,
@@ -454,17 +494,39 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
   const botGuard = new BotGuard();
   const botOff = new BotOffense();
   const defender = new Defender();
+  // 2v2 extras: the second opponent guards your teammate (or spaces the floor), your teammate spaces (or guards him).
+  const oppGuard2 = new BotGuard();
+  const oppSpacer = new BotSpacer(BOT_HOOP);
+  const mateSpacer = new BotSpacer(PLAYER_HOOP);
+  const mateGuard = new BotGuard(Math.random, BOT_HOOP);
+  const twos = () => match.mode === "twos";
+  const oppGuards = () => [botGuard, oppGuard2];
   let noteId = 1_000_000;
   const note = (text: string, tone: Callout["tone"], detail?: string) =>
     hudStore.set({ callout: { id: ++noteId, text, points: 0, tone, detail } });
-  const scoreLine = () => `YOU ${match.you} – ${match.bot} BOT`;
+  const scoreLine = () => (twos() ? `US ${match.you} – ${match.bot} THEM` : `YOU ${match.you} – ${match.bot} BOT`);
+  /** The opponent closest to you on offense (the one on you, or whoever helps). */
+  const nearestGuard = () => {
+    if (!twos()) return botGuard;
+    const d = (g: BotGuard) => Math.hypot(body.position.x - g.position.x, body.position.z - g.position.z);
+    return d(oppGuard2) < d(botGuard) ? oppGuard2 : botGuard;
+  };
   const distanceToBot = () => {
-    const at = match.phase === "offense" ? botGuard.position : botOff.position;
+    const at = match.phase === "offense" ? nearestGuard().position : botOff.position;
     return Math.hypot(body.position.x - at.x, body.position.z - at.z);
   };
   const publishDuel = () =>
     hudStore.set({
-      duel: match.active ? { you: match.you, bot: match.bot, stops: match.stops, phase: match.phase } : null,
+      duel: match.active
+        ? {
+            you: match.you,
+            bot: match.bot,
+            stops: match.stops,
+            phase: match.phase,
+            mode: match.mode,
+            target: twos() ? TWOS.target : null,
+          }
+        : null,
     });
   /** After `delay` seconds the ball goes to `next` (the drill never leaves defense). */
   const scheduleSwitch = (delay: number, next: "offense" | "defense", locked = false) => {
@@ -487,14 +549,24 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
       body.placeAt(PLAYER_START);
       camFacing.copy(body.facing);
       botGuard.start(botSpot.set(PLAYER_START.x + 1.6, 0, PLAYER_START.z), PLAYER_START, simTime);
+      if (twos()) {
+        // Check-up: your teammate on the wing, his man a step toward the hoop.
+        mateSpacer.start(botSpot.set(4.4, 0, -4.6), PLAYER_START, simTime);
+        oppGuard2.start(botSpot.set(5.8, 0, -4.6), mateSpacer.position, simTime);
+      }
     } else {
       // The bot starts near the middle with the ball; you are between it and its hoop.
+      botOff.shootRange = twos() ? TWOS.shootRange[0] + Math.random() * (TWOS.shootRange[1] - TWOS.shootRange[0]) : DUEL.bot.shootRange;
       botOff.start(botSpot.set(2.5, 0, 0.8), simTime);
       body.placeAt(botSpot.set(0.4, 0, 0.8));
       body.yaw = Math.atan2(botOff.position.x - body.position.x, botOff.position.z - body.position.z);
       body.facing.set(Math.sin(body.yaw), 0, Math.cos(body.yaw));
       body.faceTarget = botOff.position;
       camFacing.copy(body.facing);
+      if (twos()) {
+        oppSpacer.start(botSpot.set(-3.2, 0, -4.4), botOff.position, simTime);
+        mateGuard.start(botSpot.set(-1.8, 0, -4.4), oppSpacer.position, simTime);
+      }
     }
     // Rebuild the player's ball after moving the body.
     dribble.restart();
@@ -508,8 +580,10 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
     match.locked = false;
     body.faceTarget = null;
     ball.visible = true;
-    botModel.root.visible = false;
-    botShadow.visible = false;
+    for (const f of [botFig, opp2Fig, mateFig]) {
+      f.model.root.visible = false;
+      f.shadow.visible = false;
+    }
     botBall.visible = false;
     botBallShadow.visible = false;
     defender.reset();
@@ -521,7 +595,16 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
       const dist = Math.hypot(dx, dz);
       // In front of the shooter = on the hoop's side of it.
       const inFront = dx * (-HOOP_X - botOff.position.x) + dz * (0 - botOff.position.z) > 0;
-      const verdict = defender.judge(dist, inFront);
+      let verdict = defender.judge(dist, inFront);
+      if (twos() && verdict !== "blocked") {
+        // Your teammate helps: his jump can swat it, or a hand up in its face contests it.
+        const mx = mateGuard.position.x - botOff.position.x;
+        const mz = mateGuard.position.z - botOff.position.z;
+        const mateIn = mx * (BOT_HOOP.x - botOff.position.x) + mz * (0 - botOff.position.z) > 0;
+        const md = Math.hypot(mx, mz);
+        if (mateIn && mateGuard.blocks(md)) verdict = "blocked";
+        else if (verdict === "open" && mateIn && md < TWOS.contestReach && Math.random() < 0.5) verdict = "contested";
+      }
       if (verdict === "contested") note("CONTESTED", "shot");
       return verdict;
     },
@@ -533,8 +616,9 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
         pop("バシッ", botOff.ball, 1);
         playRim(6);
       } else if (made) {
-        match.bot += DUEL.basket;
-        note("BOT SCORES", "miss", scoreLine());
+        const three = twos() && botOff.hoopDistance > THREE_POINT_RADIUS;
+        match.bot += twos() ? (three ? 2 : 1) : DUEL.basket;
+        note(twos() ? (three ? "THEY HIT A THREE" : "THEY SCORE") : "BOT SCORES", "miss", scoreLine());
         playSwish();
         netKick[1] = elapsed;
         pop("シュパッ", nets[1].getWorldPosition(new THREE.Vector3()), 0.8);
@@ -550,14 +634,33 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
       playSqueak(3);
     },
   };
+  const separateAll = (spots: THREE.Vector3[]) => {
+    for (let i = 0; i < spots.length; i++) for (let j = i + 1; j < spots.length; j++) separate(spots[i], spots[j]);
+  };
+  /** First to the target wins: the win/lose screen. */
+  const endTwos = () => {
+    const result = { mode: "twos" as const, you: match.you, bot: match.bot, stops: match.stops, won: match.you > match.bot };
+    held.clear();
+    playBuzzer();
+    stopMatch();
+    session.finish(combo.score);
+    hudStore.set({ screen: "match", match: result, duel: null });
+  };
   /** Per-frame bot and possession logic. */
   const tickMatch = (dt: number) => {
-    if (match.switchAt !== null && simTime >= match.switchAt) enterPhase(match.next);
+    if (match.switchAt !== null && simTime >= match.switchAt) {
+      if (twos() && (match.you >= TWOS.target || match.bot >= TWOS.target)) return endTwos();
+      enterPhase(match.next);
+    }
     if (match.phase === "offense") {
       botGuard.update(simTime, dt, body.position);
-      separate(body.position, botGuard.position);
+      if (twos()) {
+        mateSpacer.update(simTime, dt, body.position);
+        oppGuard2.update(simTime, dt, mateSpacer.position);
+        separateAll([body.position, botGuard.position, oppGuard2.position, mateSpacer.position]);
+      } else separate(body.position, botGuard.position);
       const live = dribble.state !== "loose" && dribble.state !== "shot" && shot.phase === "none";
-      if (live && match.switchAt === null && botGuard.tryStrip(simTime, dt, body.position)) {
+      if (live && match.switchAt === null && oppGuards().slice(0, twos() ? 2 : 1).some((g) => g.tryStrip(simTime, dt, body.position))) {
         note("STRIPPED!", "lost", scoreLine());
         pop("バシッ", dribble.ball.position, 1);
         playSqueak(4);
@@ -567,8 +670,18 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
       return;
     }
     defender.update(simTime, dt, held.has("KeyI"));
-    botOff.update(simTime, dt, body.position, offenseEvents);
-    separate(body.position, botOff.position);
+    if (twos()) {
+      // The ball handler works around whichever of you two is nearer.
+      const near = (a: THREE.Vector3) => Math.hypot(a.x - botOff.position.x, a.z - botOff.position.z);
+      botOff.update(simTime, dt, near(mateGuard.position) < near(body.position) ? mateGuard.position : body.position, offenseEvents);
+      oppSpacer.update(simTime, dt, botOff.position);
+      mateGuard.update(simTime, dt, oppSpacer.position);
+      if (botOff.phase === "windup" && near(mateGuard.position) < DUEL.bot.block.contestRange) mateGuard.contest(simTime);
+      separateAll([body.position, botOff.position, oppSpacer.position, mateGuard.position]);
+    } else {
+      botOff.update(simTime, dt, body.position, offenseEvents);
+      separate(body.position, botOff.position);
+    }
     if (match.switchAt === null && botOff.exposed && defender.strips(simTime, body.position, body.yaw, botOff.ball)) {
       match.stops++;
       botOff.strip();
@@ -589,11 +702,11 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
     shot.restart();
     combo.resetRun();
     stopMatch();
-    const versus = mode === "duel" || mode === "defense";
+    const versus = mode === "duel" || mode === "defense" || mode === "twos";
     session.start(mode, simTime, versus ? DUEL.matchSeconds : undefined);
     if (versus) {
       Object.assign(match, { active: true, mode, you: 0, bot: 0, stops: 0 });
-      enterPhase(mode === "duel" ? "offense" : "defense");
+      enterPhase(mode === "defense" ? "defense" : "offense");
     }
     hudStore.set({ screen: "play", mode, timeLeft: session.timeLeft(simTime), result: null, match: null, duel: null });
     publishDuel();
@@ -732,56 +845,75 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
     }
   };
 
-  /** Poses the bot's model, ball and shadows for the current possession. */
-  const botHands: Record<Side, THREE.Vector3 | null> = { L: null, R: null };
-  const botTargets: Record<Side, THREE.Vector3> = { L: new THREE.Vector3(), R: new THREE.Vector3() };
-  const botBase = new THREE.Vector3();
-  const botAt = (x: number, y: number, z: number, side: Side) =>
-    toWorld([x * (side === "L" ? 1 : -1), 0, z], botBase, botYaw, botTargets[side]).setY(botBase.y + y);
-  let botYaw = 0;
-  const poseBot = (dt: number) => {
-    const on = match.active;
-    botModel.root.visible = on;
-    botShadow.visible = on;
-    const offense = on && match.phase === "defense";
-    botBall.visible = offense && botOff.phase !== "stolen";
-    botBallShadow.visible = botBall.visible;
-    if (!on) return;
-    const src = offense ? botOff : botGuard;
-    botYaw = src.yaw;
-    botBase.set(src.position.x, src.jumpY, src.position.z);
-    botModel.root.position.copy(botBase);
-    botModel.root.rotation.y = botYaw;
-    botShadow.position.set(src.position.x, 0.003, src.position.z);
-    botHands.L = botHands.R = null;
+  /** Hand target at a body-relative offset (x: + left) from the figure's feet. */
+  const figAt = (f: Figure, x: number, y: number, z: number, side: Side) =>
+    toWorld([x * (side === "L" ? 1 : -1), 0, z], f.base, f.yaw, f.targets[side]).setY(f.base.y + y);
+  interface Source {
+    position: THREE.Vector3;
+    velocity: THREE.Vector3;
+    yaw: number;
+    jumpY: number;
+  }
+  /** Poses one bot: dribbling with the ball, guarding with arms wide, or just spacing the floor. */
+  const poseFigure = (f: Figure, dt: number, src: Source, role: "offense" | "guard" | "spacer") => {
+    f.yaw = src.yaw;
+    f.base.set(src.position.x, src.jumpY, src.position.z);
+    f.model.root.position.copy(f.base);
+    f.model.root.rotation.y = f.yaw;
+    f.shadow.position.set(src.position.x, 0.003, src.position.z);
+    f.hands.L = f.hands.R = null;
     let shoot: { dip: number; air: number } | undefined;
-    if (offense && botOff.phase === "dribble") {
+    if (role === "offense" && botOff.phase === "dribble") {
       const side: Side = botOff.ballSide > 0 ? "L" : "R";
-      botHands[side] = botTargets[side].copy(botOff.ball).setY(botOff.ball.y + WRIST_ABOVE_BALL);
-    } else if (offense && (botOff.phase === "windup" || botOff.phase === "flight")) {
+      f.hands[side] = f.targets[side].copy(botOff.ball).setY(botOff.ball.y + WRIST_ABOVE_BALL);
+    } else if (role === "offense" && (botOff.phase === "windup" || botOff.phase === "flight")) {
       // Both hands under the ball, then up in the follow-through.
       for (const side of ["L", "R"] as const) {
-        botHands[side] = botAt(0.12, botOff.phase === "windup" ? botOff.ball.y - botBase.y - 0.03 : 2.2, 0.3, side);
+        f.hands[side] = figAt(f, 0.12, botOff.phase === "windup" ? botOff.ball.y - f.base.y - 0.03 : 2.2, 0.3, side);
       }
       shoot = { dip: botOff.phase === "windup" && botOff.jumpY < 0.05 ? 1 : 0, air: THREE.MathUtils.clamp(botOff.jumpY / 0.15, 0, 1) };
-    } else if (!offense) {
+    } else if (role === "guard") {
       // Guarding: arms wide, up when it jumps at your shot.
+      const guard = src as BotGuard;
       for (const side of ["L", "R"] as const) {
-        const a = botGuard.armsUp;
+        const a = guard.armsUp;
         const x = 0.7 + (0.22 - 0.7) * a;
-        botHands[side] = botAt(x, 1.15 + (2.3 - 1.15) * a, 0.45 + (0.25 - 0.45) * a, side);
+        f.hands[side] = figAt(f, x, 1.15 + (2.3 - 1.15) * a, 0.45 + (0.25 - 0.45) * a, side);
       }
-      if (botGuard.jumpY > 0) shoot = { dip: 0, air: THREE.MathUtils.clamp(botGuard.jumpY / 0.15, 0, 1) };
+      if (guard.jumpY > 0) shoot = { dip: 0, air: THREE.MathUtils.clamp(guard.jumpY / 0.15, 0, 1) };
     }
-    botModel.animate({
+    f.model.animate({
       dt,
       elapsed,
       speed: Math.hypot(src.velocity.x, src.velocity.z),
       dribbling: true,
       split: 0,
-      hands: botHands,
+      hands: f.hands,
       shoot,
     });
+  };
+  /** Poses the bots, their ball and shadows for the current possession. */
+  const poseBot = (dt: number) => {
+    const on = match.active;
+    const offense = on && match.phase === "defense";
+    for (const f of [botFig, opp2Fig, mateFig]) {
+      f.model.root.visible = on && (f === botFig || twos());
+      f.shadow.visible = f.model.root.visible;
+    }
+    botBall.visible = offense && botOff.phase !== "stolen";
+    botBallShadow.visible = botBall.visible;
+    if (!on) return;
+    if (offense) poseFigure(botFig, dt, botOff, "offense");
+    else poseFigure(botFig, dt, botGuard, "guard");
+    if (twos()) {
+      if (offense) {
+        poseFigure(opp2Fig, dt, oppSpacer, "spacer");
+        poseFigure(mateFig, dt, mateGuard, "guard");
+      } else {
+        poseFigure(opp2Fig, dt, oppGuard2, "guard");
+        poseFigure(mateFig, dt, mateSpacer, "spacer");
+      }
+    }
     if (offense) {
       botBall.position.copy(botOff.ball);
       botBall.rotation.x += dt * 6;
@@ -1063,6 +1195,18 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
           botPhase: match.phase === "defense" ? botOff.phase : "guard",
           jumpY: +defender.jumpY.toFixed(3),
           raise: +defender.raise.toFixed(3),
+        };
+      },
+      get twos() {
+        const defense = match.phase === "defense";
+        return {
+          active: match.active && twos(),
+          phase: match.phase,
+          us: match.you,
+          them: match.bot,
+          target: TWOS.target,
+          mate: tuple((defense ? mateGuard : mateSpacer).position),
+          opponents: [tuple((defense ? botOff : botGuard).position), tuple((defense ? oppSpacer : oppGuard2).position)] as TwosSpots,
         };
       },
       botShoot: () => botOff.shootNow(simTime),

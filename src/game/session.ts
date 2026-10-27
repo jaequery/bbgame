@@ -5,14 +5,20 @@
 import type { Move, MoveKind } from "./dribble";
 import { RUNS } from "@/lib/runs";
 
-/** "duel" is a timed 1v1 against the bot (offense, then defense); "defense" is the defense drill alone. */
-export type PlayMode = "session" | "practice" | "duel" | "defense";
+/**
+ * "duel" is a timed 1v1 against the bot (offense, then defense); "defense" is the defense drill alone;
+ * "twos" is 2v2 with an AI teammate against two bots, first to 11, no clock.
+ */
+export type PlayMode = "session" | "practice" | "duel" | "defense" | "twos";
 
 /** What the match-over screen shows after a duel or a defense drill. */
 export interface MatchResult {
-  mode: "duel" | "defense";
+  mode: "duel" | "defense" | "twos";
+  /** In 2v2 these are the two teams' scores. */
   you: number;
   bot: number;
+  /** 2v2: your team reached the target first. */
+  won?: boolean;
   /** Shots blocked or balls stolen. */
   stops: number;
 }
@@ -42,7 +48,7 @@ export class SessionClock {
 
   /** Seconds left on the clock; null in practice or between runs. */
   timeLeft(now: number): number | null {
-    return this.mode && this.mode !== "practice" ? Math.max(0, this.endsAt - now) : null;
+    return this.mode && this.mode !== "practice" && this.mode !== "twos" ? Math.max(0, this.endsAt - now) : null;
   }
 
   onMove(move: Move) {

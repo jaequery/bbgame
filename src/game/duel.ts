@@ -7,6 +7,15 @@
 import * as THREE from "three";
 import { BALL_RADIUS, FLOOR_MAX_X, FLOOR_MAX_Z, FLOOR_MIN_X, FLOOR_MIN_Z, GRAVITY, HOOP_X, RIM_HEIGHT } from "./dimensions";
 
+/** 2v2: first team to `target` wins; a basket is 1 point, 2 from beyond the arc. */
+export const TWOS = {
+  target: 11,
+  /** Opponent ball handlers pull up from a random distance in this range (m), so some shots are threes. */
+  shootRange: [5.2, 7.8] as [number, number],
+  /** A teammate this close (m) in front of a shooter can contest it. */
+  contestReach: 2.2,
+};
+
 export const DUEL = {
   /** Length of a 1v1 match or defense drill (s). */
   matchSeconds: 90,
@@ -63,8 +72,8 @@ export const DUEL = {
   },
 };
 
-const BOT_HOOP = new THREE.Vector3(-HOOP_X, RIM_HEIGHT, 0);
-const PLAYER_HOOP = new THREE.Vector3(HOOP_X, RIM_HEIGHT, 0);
+export const BOT_HOOP = new THREE.Vector3(-HOOP_X, RIM_HEIGHT, 0);
+export const PLAYER_HOOP = new THREE.Vector3(HOOP_X, RIM_HEIGHT, 0);
 
 const smooth = (t: number) => t * t * (3 - 2 * t);
 const clamp01 = (t: number) => Math.min(1, Math.max(0, t));
@@ -109,6 +118,8 @@ export class BotOffense {
   readonly velocity = new THREE.Vector3();
   yaw = -Math.PI / 2;
   jumpY = 0;
+  /** The bot goes up for the shot from inside this distance (m). */
+  shootRange: number = DUEL.bot.shootRange;
   phase: BotShotPhase = "dribble";
   /** +1: the ball is on the bot's left. Eases with `sideEase`. */
   ballSide = 1;
@@ -197,7 +208,7 @@ export class BotOffense {
           toHoop.addScaledVector(perp, (lateral >= 0 ? -1 : 1) * 1.1 * (1 - Math.max(0, ahead) / 2.4));
         }
         toHoop.addScaledVector(perp, this.ballSide * 0.2).normalize();
-        const inRange = dist <= DUEL.bot.shootRange;
+        const inRange = dist <= this.shootRange;
         const speed = inRange ? 0.8 : DUEL.bot.speed;
         this.velocity.x += (toHoop.x * speed - this.velocity.x) * k;
         this.velocity.z += (toHoop.z * speed - this.velocity.z) * k;
@@ -306,7 +317,7 @@ export class BotOffense {
   }
 }
 
-/** The bot guarding the player, who attacks the +X hoop. */
+/** A bot guarding a man who attacks `hoop` (the +X hoop by default): stays between him and it. */
 export class BotGuard {
   readonly position = new THREE.Vector3();
   readonly velocity = new THREE.Vector3();
@@ -321,7 +332,10 @@ export class BotGuard {
   /** Smoothed read of where the player is: the bot reacts late. */
   private readonly read = new THREE.Vector3();
 
-  constructor(private readonly random: () => number = Math.random) {}
+  constructor(
+    private readonly random: () => number = Math.random,
+    private readonly hoop: THREE.Vector3 = PLAYER_HOOP,
+  ) {}
 
   start(at: THREE.Vector3, player: THREE.Vector3, now: number) {
     this.position.copy(at);
@@ -342,7 +356,7 @@ export class BotGuard {
   update(now: number, dt: number, player: THREE.Vector3) {
     this.read.lerp(player, 1 - Math.exp(-dt * 5));
     // Stay between the player and the hoop, a gap in front.
-    const toHoop = this.dir.set(PLAYER_HOOP.x - this.read.x, 0, PLAYER_HOOP.z - this.read.z).normalize();
+    const toHoop = this.dir.set(this.hoop.x - this.read.x, 0, this.hoop.z - this.read.z).normalize();
     this.want.copy(this.read).addScaledVector(toHoop, DUEL.bot.gap);
     const dx = this.want.x - this.position.x;
     const dz = this.want.z - this.position.z;
@@ -376,6 +390,60 @@ export class BotGuard {
   blocks(distance: number) {
     const b = DUEL.bot.block;
     return this.jumpY > 0.2 && distance < b.range && this.random() < b.chance;
+  }
+}
+
+/** An off-ball teammate (2v2): drifts between spots in the frontcourt of the hoop it attacks, away from the ball handler. */
+export class BotSpacer {
+  readonly position = new THREE.Vector3();
+  readonly velocity = new THREE.Vector3();
+  yaw = 0;
+  jumpY = 0;
+  private readonly spot = new THREE.Vector3();
+  private nextAt = 0;
+
+  /** `hoop` is the one this side attacks. */
+  constructor(
+    private readonly hoop: THREE.Vector3,
+    private readonly random: () => number = Math.random,
+  ) {}
+
+  start(at: THREE.Vector3, handler: THREE.Vector3, now: number) {
+    this.position.copy(at);
+    this.velocity.set(0, 0, 0);
+    this.yaw = Math.atan2(this.hoop.x - at.x, this.hoop.z - at.z);
+    this.pick(handler, now);
+  }
+
+  /** Wing, corner or a cut to the short side, on the side of the floor the handler is not on. */
+  private pick(handler: THREE.Vector3, now: number) {
+    const dir = Math.sign(this.hoop.x);
+    const side = Math.abs(handler.z) < 0.6 ? (this.random() < 0.5 ? -1 : 1) : -Math.sign(handler.z);
+    const spots: [number, number][] = [
+      [HOOP_X - 6.2, 4.6],
+      [HOOP_X - 3.4, 5.6],
+      [HOOP_X - 2, 1.9],
+    ];
+    const [depth, lateral] = spots[Math.floor(this.random() * spots.length)];
+    this.spot.set(dir * depth, 0, side * lateral);
+    this.nextAt = now + 2.2 + this.random() * 1.6;
+  }
+
+  update(now: number, dt: number, handler: THREE.Vector3) {
+    if (now >= this.nextAt) this.pick(handler, now);
+    const dx = this.spot.x - this.position.x;
+    const dz = this.spot.z - this.position.z;
+    const d = Math.hypot(dx, dz);
+    const speed = Math.min(DUEL.bot.speed, d * 3);
+    const k = 1 - Math.exp(-dt * 6);
+    this.velocity.x += ((d > 1e-3 ? dx / d : 0) * speed - this.velocity.x) * k;
+    this.velocity.z += ((d > 1e-3 ? dz / d : 0) * speed - this.velocity.z) * k;
+    this.position.addScaledVector(this.velocity, dt);
+    keepOnFloor(this.position);
+    const want = Math.atan2(this.hoop.x - this.position.x, this.hoop.z - this.position.z);
+    let turn = want - this.yaw;
+    turn = Math.atan2(Math.sin(turn), Math.cos(turn));
+    this.yaw += THREE.MathUtils.clamp(turn, -9 * dt, 9 * dt);
   }
 }
 

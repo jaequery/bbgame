@@ -78,8 +78,14 @@ export default function Hud() {
             {hud.duel.phase === "offense" ? "OFFENSE" : "DEFENSE"}
           </span>
           <span className={styles.versusScore}>
-            YOU <b data-testid="hud-you">{hud.duel.you}</b> – <b data-testid="hud-bot">{hud.duel.bot}</b> BOT
+            {hud.duel.mode === "twos" ? "US" : "YOU"} <b data-testid="hud-you">{hud.duel.you}</b> –{" "}
+            <b data-testid="hud-bot">{hud.duel.bot}</b> {hud.duel.mode === "twos" ? "THEM" : "BOT"}
           </span>
+          {hud.duel.target !== null && (
+            <span className={styles.versusStops}>
+              FIRST TO <b data-testid="hud-target">{hud.duel.target}</b> · 3PT = 2
+            </span>
+          )}
           <span className={styles.versusStops}>
             STOPS <b data-testid="hud-stops">{hud.duel.stops}</b>
           </span>
