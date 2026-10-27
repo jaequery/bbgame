@@ -2,7 +2,7 @@
 // The dribble/combo/shot code writes score, combo, chain, callouts, SFX pops and the
 // shot meter here; the session clock writes the screen, mode and time left.
 
-import type { PlayMode, SessionResult } from "./session";
+import type { MatchResult, PlayMode, SessionResult } from "./session";
 
 export type ViewId = "A" | "B" | "C";
 
@@ -47,7 +47,17 @@ export interface SfxPop {
 }
 
 /** Which overlay is up. Game keys only work on "play". */
-export type Screen = "title" | "play" | "results" | "leaderboard";
+export type Screen = "title" | "play" | "results" | "leaderboard" | "match";
+
+/** The 1v1 / defense-drill scoreboard. */
+export interface DuelHud {
+  you: number;
+  bot: number;
+  /** Shots blocked and balls stripped. */
+  stops: number;
+  /** Who has the ball: you attack on "offense", the bot on "defense". */
+  phase: "offense" | "defense";
+}
 
 export interface HudState {
   score: number;
@@ -66,6 +76,10 @@ export interface HudState {
   topScore: number;
   /** Last finished Session, for the results screen. */
   result: SessionResult | null;
+  /** 1v1 / defense-drill scoreboard; null in the other modes. */
+  duel: DuelHud | null;
+  /** Last finished 1v1 / defense drill, for the match-over screen. */
+  match: MatchResult | null;
 }
 
 let state: HudState = {
@@ -81,6 +95,8 @@ let state: HudState = {
   timeLeft: null,
   topScore: 0,
   result: null,
+  duel: null,
+  match: null,
   meter: null,
 };
 const listeners = new Set<() => void>();

@@ -75,7 +75,18 @@ const FOREARM = 0.28;
 const SPINE = 0.2;
 const CHEST = 0.3;
 
-export function createPlayer(fonts: GameFonts): Player {
+/** Colours that differ between the player and the bot. */
+export interface Look {
+  jersey: number;
+  trim: number;
+  hair: number;
+  shoe: number;
+  number: string;
+}
+
+export const HERO_LOOK: Look = { jersey: JERSEY, trim: JERSEY_TRIM, hair: HAIR, shoe: SHOE, number: "10" };
+
+export function createPlayer(fonts: GameFonts, look: Look = HERO_LOOK): Player {
   const root = new THREE.Group();
   root.name = "player";
   const j = {} as Record<JointName, THREE.Group>;
@@ -89,10 +100,10 @@ export function createPlayer(fonts: GameFonts): Player {
   };
 
   const skin = toon(SKIN);
-  const jerseyTex = jerseyTexture(fonts);
+  const jerseyTex = jerseyTexture(fonts, look);
   const jersey = toon(0xffffff, { map: jerseyTex });
-  const shorts = toon(JERSEY);
-  const trim = toon(JERSEY_TRIM);
+  const shorts = toon(look.jersey);
+  const trim = toon(look.trim);
 
   // Hips (pelvis) — height is set below once the legs are posed.
   const hips = joint("hips", root, 0, 1, 0);
@@ -124,7 +135,7 @@ export function createPlayer(fonts: GameFonts): Player {
   headMesh.position.y = 0.1;
   head.add(headMesh);
   addFace(head);
-  addHair(head);
+  addHair(head, look.hair);
 
   // Arms.
   const arm = (side: "L" | "R") => {
@@ -179,7 +190,7 @@ export function createPlayer(fonts: GameFonts): Player {
     const ankle = joint(`ankle${side}`, knee, 0, -SHIN, 0);
     const shoeGeo = new THREE.BoxGeometry(0.13, 0.1, 0.3, 2, 1, 2);
     roundBox(shoeGeo, 0.04);
-    const shoe = inked(shoeGeo, toon(SHOE), 2.5);
+    const shoe = inked(shoeGeo, toon(look.shoe), 2.5);
     shoe.position.set(0, -0.03, 0.06);
     ankle.add(shoe);
     const sole = inked(new THREE.BoxGeometry(0.135, 0.03, 0.31), toon(0xf4efe4), 1.5);
@@ -367,8 +378,8 @@ function roundBox(geo: THREE.BoxGeometry, r: number) {
   geo.computeVertexNormals();
 }
 
-function addHair(head: THREE.Group) {
-  const hairMat = toon(HAIR);
+function addHair(head: THREE.Group, hair: number) {
+  const hairMat = toon(hair);
   const cap = inked(new THREE.SphereGeometry(0.122, 18, 12, 0, Math.PI * 2, 0, Math.PI * 0.55), hairMat, 2);
   cap.position.set(0, 0.115, -0.008);
   cap.scale.set(0.95, 1.05, 1.02);
@@ -419,13 +430,13 @@ function addFace(head: THREE.Group) {
   }
 }
 
-function jerseyTexture(fonts: GameFonts): THREE.CanvasTexture {
+function jerseyTexture(fonts: GameFonts, look: Look): THREE.CanvasTexture {
   // Wraps the torso cylinder: u = 0 is the front (+Z), u = 0.5 the back (−Z).
   return drawnTexture(1024, 512, (ctx, w, h) => {
-    ctx.fillStyle = "#" + JERSEY.toString(16).padStart(6, "0");
+    ctx.fillStyle = "#" + look.jersey.toString(16).padStart(6, "0");
     ctx.fillRect(0, 0, w, h);
     // Side panels + neck/arm trim.
-    ctx.fillStyle = "#" + JERSEY_TRIM.toString(16).padStart(6, "0");
+    ctx.fillStyle = "#" + look.trim.toString(16).padStart(6, "0");
     for (const x of [w * 0.25, w * 0.75]) ctx.fillRect(x - 10, 0, 20, h);
     ctx.fillRect(0, 0, w, 14);
     ctx.fillRect(0, h - 18, w, 18);
@@ -446,10 +457,10 @@ function jerseyTexture(fonts: GameFonts): THREE.CanvasTexture {
       ctx.restore();
     };
     // Back: name + big number.
-    drawText("KAZE", w * 0.5, h * 0.2, 70);
-    drawText("10", w * 0.5, h * 0.55, 210, 1.1);
+    drawText(look === HERO_LOOK ? "KAZE" : "BOT", w * 0.5, h * 0.2, 70);
+    drawText(look.number, w * 0.5, h * 0.55, 210, 1.1);
     // Front number straddles the u = 0 / 1 seam.
-    drawText("10", 0, h * 0.42, 130);
-    drawText("10", w, h * 0.42, 130);
+    drawText(look.number, 0, h * 0.42, 130);
+    drawText(look.number, w, h * 0.42, 130);
   });
 }

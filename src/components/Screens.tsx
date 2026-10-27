@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 import { unlockAudio } from "@/game/audio";
 import type { MoveKind } from "@/game/dribble";
 import { hudStore } from "@/game/hudStore";
-import { runControl, type PlayMode, type SessionResult } from "@/game/session";
+import { runControl, type MatchResult, type PlayMode, type SessionResult } from "@/game/session";
 import { RUNS, type RunRow } from "@/lib/runs";
 import styles from "./Screens.module.css";
 
@@ -73,6 +73,9 @@ export default function Screens() {
           onSkip={() => show("title")}
         />
       )}
+      {hud.screen === "match" && hud.match && (
+        <MatchOver result={hud.match} onAgain={() => start(hud.match!.mode)} onTitle={() => show("title")} />
+      )}
       {hud.screen === "leaderboard" && (
         <Leaderboard
           board={board}
@@ -108,6 +111,14 @@ function Title({
         <button className={styles.button} onClick={() => onStart("practice")} data-testid="start-practice">
           <span className={styles.btnMain}>FREE PRACTICE</span>
           <span className={styles.btnSub}>No clock · nothing saved · Esc to leave</span>
+        </button>
+        <button className={styles.button} onClick={() => onStart("duel")} data-testid="start-duel">
+          <span className={styles.btnMain}>1v1 vs BOT</span>
+          <span className={styles.btnSub}>90s · attack, then defend · first to the bucket count wins</span>
+        </button>
+        <button className={styles.button} onClick={() => onStart("defense")} data-testid="start-defense">
+          <span className={styles.btnMain}>DEFENSE DRILL</span>
+          <span className={styles.btnSub}>Space block · J / L swipe · I hand up</span>
         </button>
         <button className={styles.button} onClick={onBoard} data-testid="open-leaderboard">
           <span className={styles.btnMain}>LEADERBOARD</span>
@@ -248,6 +259,54 @@ function Results({
         </button>
         <button type="button" tabIndex={-1} className={styles.button} onClick={onSkip}>
           <span className={styles.btnMain}>SKIP</span>
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function MatchOver({ result, onAgain, onTitle }: { result: MatchResult; onAgain: () => void; onTitle: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.code === "Escape" && onTitle();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onTitle]);
+
+  const duel = result.mode === "duel";
+  const verdict = !duel ? "TIME UP!!" : result.you > result.bot ? "YOU WIN!!" : result.you < result.bot ? "BOT WINS" : "DRAW";
+  return (
+    <section className={`${styles.panel} ${styles.resultsPanel}`} aria-label="Match over">
+      <span className={styles.burst} data-testid="match-verdict">
+        {verdict}
+      </span>
+      <div className={styles.stats}>
+        {duel && (
+          <div>
+            <span className={styles.statLabel}>YOU</span>
+            <span className={styles.statValue} data-testid="match-you">
+              {result.you}
+            </span>
+          </div>
+        )}
+        <div>
+          <span className={styles.statLabel}>BOT</span>
+          <span className={styles.statValue} data-testid="match-bot">
+            {result.bot}
+          </span>
+        </div>
+        <div>
+          <span className={styles.statLabel}>STOPS</span>
+          <span className={styles.statValue} data-testid="match-stops">
+            {result.stops}
+          </span>
+        </div>
+      </div>
+      <div className={styles.row}>
+        <button type="button" className={styles.primary} onClick={onAgain} autoFocus data-testid="match-again">
+          <span className={styles.btnMain}>AGAIN</span>
+        </button>
+        <button type="button" className={styles.button} onClick={onTitle}>
+          <span className={styles.btnMain}>TITLE</span>
         </button>
       </div>
     </section>

@@ -55,6 +55,44 @@
   letter-spacing: 0.04em;
 }
 
+/* 1v1 / defense-drill scoreboard, under the clock. */
+.versus {
+  composes: panel;
+  position: absolute;
+  top: 190px;
+  right: 28px;
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  min-width: 190px;
+  padding: 6px 14px 8px;
+  background: var(--paper);
+  box-shadow: 6px 6px 0 var(--ink);
+}
+
+.versusPhase {
+  font-family: var(--font-display), Impact, sans-serif;
+  font-size: 15px;
+  letter-spacing: 0.4em;
+  color: var(--red);
+}
+
+.versus[data-phase="defense"] .versusPhase {
+  color: #2a5fd0;
+}
+
+.versusScore {
+  font-family: var(--font-display), Impact, sans-serif;
+  font-size: 24px;
+  font-variant-numeric: tabular-nums;
+}
+
+.versusStops {
+  font-weight: 800;
+  font-size: 13px;
+  letter-spacing: 0.15em;
+}
+
 /* Session shot clock, under the title (clear of the centre callouts). */
 .clock {
   composes: panel;
