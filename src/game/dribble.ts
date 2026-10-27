@@ -75,7 +75,7 @@ export const MOVE_NAMES: Record<MoveKind, string> = {
 
 const HAND_KEY: Record<Hand, DribbleKey> = { L: "J", R: "L" };
 const KEY_HAND: Partial<Record<DribbleKey, Hand>> = { J: "L", L: "R" };
-const PATH_MOVE: Record<string, MoveKind> = { I: "crossover", K: "between", ",": "behind", U: "spinR", O: "spinL" };
+const PATH_MOVE: Record<string, MoveKind> = { I: "pound", K: "between", ",": "behind", U: "spinR", O: "spinL" };
 
 export interface Move {
   kind: MoveKind;
@@ -448,9 +448,12 @@ export class DribbleController {
   private act(key: DribbleKey, now: number) {
     const from = this.hand;
     const keyHand = KEY_HAND[key];
-    // A spin always ends with the ball in the other hand, whichever way it turns.
-    const to: Hand = keyHand ?? (from === "L" ? "R" : "L");
-    const kind: MoveKind = keyHand
+    // A spin always ends with the ball in the other hand, whichever way it turns. I is a power
+    // dribble: the ball stays in the hand it is in.
+    const to: Hand = key === "I" ? from : (keyHand ?? (from === "L" ? "R" : "L"));
+    const kind: MoveKind = key === "I"
+      ? "pound"
+      : keyHand
       ? keyHand === from
         ? this.heightMode === "high"
           ? "high"
@@ -490,7 +493,7 @@ export class DribbleController {
     this.lastMove = move;
     this.moves++;
     this.events.move(move);
-    this.absorb = move.keys.length && !KEY_HAND[move.keys[0]] ? { key: HAND_KEY[move.to], until: now + DRIBBLE.rollWindow } : null;
+    this.absorb = move.keys.length && move.keys[0] !== "I" && !KEY_HAND[move.keys[0]] ? { key: HAND_KEY[move.to], until: now + DRIBBLE.rollWindow } : null;
     this.heightMode = move.kind === "high" ? "high" : move.kind === "pound" ? this.heightMode : "low";
     const height = this.heightMode === "high" ? DRIBBLE.highHeight : DRIBBLE.lowHeight;
     this.holdHeight = height;
