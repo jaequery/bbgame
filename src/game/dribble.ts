@@ -4,9 +4,10 @@ import { BallBody, planDribble, predictCatch, type BounceEvent } from "./ballPhy
 // Dribble controller: turns J / L / I / K / , presses into hand contacts with a
 // physically simulated ball. Like an NBA game it dribbles by itself: the hand
 // always meets the ball on its way back up and pushes it again, at a rhythm set
-// by how fast the player moves. Keys force a dribble or a move at the next
-// contact (presses in the air are buffered); their timing only decides whether
-// the move is clean or sloppy, i.e. how it scores.
+// by how fast the player moves. A key acts the moment it is pressed: in the air
+// the hand goes and gets the ball (the flight is cut short) and starts the move
+// at once. Timing against the natural catch only decides whether the move is
+// clean or sloppy, i.e. how it scores — it never delays the motion.
 
 /** The player's hands. J dribbles with the left hand, L with the right. */
 export type Hand = "L" | "R";
@@ -22,9 +23,7 @@ export const DRIBBLE = {
   cleanWindow: 0.075,
   /** Within this a sloppy push is only a little weaker (early) or wild (late); the jumper takes the ball this early. */
   okWindow: 0.15,
-  /** A lone hand key pushes the ball if nothing follows within this. */
-  holdDecide: 0.13,
-  /** hand → path → hand must complete within this (from the first key). */
+  /** After a path move (I / K / ,) the receiving hand's key is optional: pressed this soon it is absorbed, not a new dribble. */
   rollWindow: 0.35,
   /** The ball peaks this far above the catch height, so the hand meets it just before the top. */
   apexMargin: 0.07,
@@ -35,17 +34,15 @@ export const DRIBBLE = {
   sprintScatter: 0.45,
   /** Auto-dribble rhythm by movement: time in the hand, catch height (m), apex above the catch (m). */
   rhythm: {
-    stand: { hold: 0.13, height: 0.7, apex: 0.07 },
-    move: { hold: 0.07, height: 0.62, apex: 0.1 },
+    stand: { hold: 0.1, height: 0.7, apex: 0.07 },
+    move: { hold: 0.06, height: 0.62, apex: 0.1 },
     sprint: { hold: 0.05, height: 0.56, apex: 0.16 },
   },
   /** Faster than this (m/s) counts as moving. */
   moveSpeed: 0.6,
   /** A forced pound (the ball hand's key) is pushed harder: caught faster, so quicker. */
-  powerApexMargin: 0.32,
-  /** A press this soon after an automatic push still takes that contact (a late press). */
-  lateGrab: 0.09,
-  /** Presses buffered while the ball is away; more are dropped. */
+  powerApexMargin: 0.4,
+  /** Presses buffered during a move's carry (they act the moment the ball is released); more are dropped. */
   bufferSize: 3,
   /** The only way to lose the ball: this many sloppy hand changes within spamWindow while sprinting. */
   spamCount: 4,
@@ -94,6 +91,8 @@ export interface Body {
 export interface DribbleEvents {
   move(move: Move): void;
   lost(reason: "spam"): void;
+  /** A dribble key was accepted — fires on the press itself, before the move it triggers. */
+  press(key: DribbleKey, hand: Hand): void;
   pickup(hand: Hand): void;
   bounce(e: BounceEvent): void;
 }
@@ -166,8 +165,10 @@ export class DribbleController {
   moves = 0;
   lost = 0;
 
-  private roll: DribbleKey[] = [];
-  private rollStart = 0;
+  /** Sim time of the last accepted press. */
+  private lastPressAt = -Infinity;
+  /** The receiving hand's key right after a path move is absorbed until this sim time. */
+  private absorb: { key: DribbleKey; until: number } | null = null;
   /** Contact began from a catch with this timing (a pickup/hold counts as clean). */
   private contactTiming: Timing = "clean";
   private contactError = 0;
@@ -207,12 +208,13 @@ export class DribbleController {
 
   /** Start of a run: ball back in the right hand, nothing in flight. Call after moving the body. */
   restart() {
+    this.lastPressAt = -Infinity;
     this.state = "held";
     this.hand = "R";
     this.heightMode = "low";
     this.split = 0;
     this.splitUntil = 0;
-    this.roll = [];
+    this.absorb = null;
     this.pending = null;
     this.lastMove = null;
     this.lastTiming = null;
@@ -248,24 +250,29 @@ export class DribbleController {
   }
 
   press(key: DribbleKey, now: number) {
+    if (this.state === "loose" || this.state === "shot") return;
+    this.events.press(key, this.hand);
+    const sincePress = now - this.lastPressAt;
+    this.lastPressAt = now;
+    // The receiving hand's key right after a path move is optional: part of that move, not a new dribble.
+    const absorb = this.absorb;
+    this.absorb = null;
+    if (absorb && key === absorb.key && now <= absorb.until) return;
     switch (this.state) {
-      case "loose":
-      case "shot":
-        return;
       case "held":
-        if (this.roll.length === 0 && this.freshContact) this.setTiming(now - this.caughtAt);
-        this.addRollKey(key, now);
+        if (this.freshContact) this.setTiming(now - this.caughtAt);
+        this.act(key, now);
         return;
       case "carry":
-        this.buffer(key, -1); // mid-move: far too early for the next contact
+        this.buffer(key, -1); // mid-move: far too early to be clean; it acts the moment the ball is released
         return;
       case "flight":
-        if (this.lastMove?.auto && this.buffered.length === 0 && now - this.releasedAt <= DRIBBLE.lateGrab) {
-          // Just after an automatic push: the hand is still on it, so this press takes that contact.
-          this.state = "held";
-          this.setTiming(now - this.caughtAt);
-          this.addRollKey(key, now);
-        } else this.buffer(key, now - this.catchAt);
+        // The hand goes and gets the ball right now instead of waiting for the natural catch.
+        this.state = "held";
+        this.caughtAt = now;
+        // hand → path is one roll: the path key keeps the grade of the key it follows.
+        if (KEY_HAND[key] || sincePress > DRIBBLE.rollWindow) this.setTiming(now - this.catchAt);
+        this.act(key, now);
         return;
     }
   }
@@ -280,9 +287,8 @@ export class DribbleController {
         this.holdPoint(this.tmp).lerp(this.ball.position, Math.exp(-dt * 30));
         this.ball.carryTo(this.tmp, dt);
         if (Number.isNaN(this.caughtAt)) this.caughtAt = now;
-        this.resolveRoll(now);
         // Nobody pressed anything: dribble it again by itself.
-        if (this.state === "held" && this.roll.length === 0 && now - this.caughtAt >= this.rhythm().hold) {
+        if (now - this.caughtAt >= this.rhythm().hold) {
           const hand = this.hand;
           this.startMove({ kind: "pound", from: hand, to: hand, keys: [], timing: "clean", auto: true }, now);
         }
@@ -323,7 +329,7 @@ export class DribbleController {
   /** Gives the ball up to the jumper: no more dribble input until `receive`. */
   surrender() {
     this.state = "shot";
-    this.roll = [];
+    this.absorb = null;
     this.buffered = [];
     this.pending = null;
     this.split = 0;
@@ -337,7 +343,7 @@ export class DribbleController {
     this.state = "held";
     this.heightMode = "low";
     this.holdHeight = DRIBBLE.lowHeight;
-    this.roll = [];
+    this.absorb = null;
     this.buffered = [];
     this.contactTiming = "clean";
     this.contactError = 0;
@@ -348,72 +354,30 @@ export class DribbleController {
 
   // ── Input ──────────────────────────────────────────────────────────────
 
-  private addRollKey(key: DribbleKey, now: number) {
-    if (this.roll.length === 0) {
-      this.rollStart = now;
-      // A path key first means "with the hand that has it".
-      if (!KEY_HAND[key]) this.roll.push(HAND_KEY[this.hand]);
-      else if (KEY_HAND[key] !== this.hand) {
-        // Straight to the other hand: basic low switch.
-        this.roll.push(HAND_KEY[this.hand]);
-      }
-    }
-    this.roll.push(key);
-    this.resolveRoll(now);
-  }
-
-  /** Decides what the current roll means, or keeps waiting for more keys. */
-  private resolveRoll(now: number) {
-    const keys = this.roll;
-    if (keys.length === 0) return;
+  /** What a key means right now: the hand keys dribble or switch, the path keys cross over to the other hand. */
+  private act(key: DribbleKey, now: number) {
     const from = this.hand;
-    const age = now - this.rollStart;
-    const done = (kind: MoveKind, to: Hand) =>
-      this.startMove({ kind, from, to, keys: [...keys], timing: this.contactTiming, ...(kind === "pound" ? { power: true } : {}) }, now);
-    const plain = () => done(this.heightMode === "high" ? "high" : "pound", from);
-
-    if (keys.length === 1) {
-      if (age > DRIBBLE.holdDecide) plain();
-      return;
-    }
-    const second = keys[1];
-    const secondHand = KEY_HAND[second];
-    if (secondHand) {
-      if (secondHand === from) plain();
-      else done("switch", secondHand);
-      return;
-    }
-    // Path key: wait for the receiving hand.
-    if (keys.length >= 3) {
-      const third = KEY_HAND[keys[2]];
-      if (third && third !== from) return done(PATH_MOVE[second], third);
-      if (third === from) return second === "I" ? done("high", from) : plain();
-      keys.splice(2); // extra path key: ignore it
-    }
-    if (age > DRIBBLE.rollWindow) {
-      if (second === "I") done("high", from);
-      else plain();
-    }
+    const keyHand = KEY_HAND[key];
+    const to: Hand = keyHand ?? (from === "L" ? "R" : "L");
+    const kind: MoveKind = keyHand
+      ? keyHand === from
+        ? this.heightMode === "high"
+          ? "high"
+          : "pound"
+        : "switch"
+      : PATH_MOVE[key];
+    this.startMove({ kind, from, to, keys: [key], timing: this.contactTiming, ...(kind === "pound" ? { power: true } : {}) }, now);
   }
 
   private buffer(key: DribbleKey, err: number) {
     if (this.buffered.length < DRIBBLE.bufferSize) this.buffered.push({ key, err });
   }
 
-  /** The hand meets the ball on its way up; buffered presses become this contact's roll. */
+  /** The hand meets the ball on its way up (nobody pressed: the auto-dribble takes it from here). */
   private catchBall(now: number) {
     this.state = "held";
     this.caughtAt = now;
-    this.roll = [];
-    const queued = this.buffered;
-    this.buffered = [];
-    this.freshContact = queued.length === 0;
-    if (queued.length === 0) return;
-    this.setTiming(queued[0].err);
-    for (const q of queued) {
-      if (this.state !== "held") break; // a move started: the rest belonged to this contact
-      this.addRollKey(q.key, now);
-    }
+    this.freshContact = true;
   }
 
   /** Grades this contact's press: only scoring depends on it. */
@@ -435,7 +399,11 @@ export class DribbleController {
   // ── Moves ──────────────────────────────────────────────────────────────
 
   private startMove(move: Move, now: number) {
-    this.roll = [];
+    // The move counts the moment it starts (callout, score, HUD), not when the ball leaves the hand.
+    this.lastMove = move;
+    this.moves++;
+    this.events.move(move);
+    this.absorb = move.keys.length && !KEY_HAND[move.keys[0]] ? { key: HAND_KEY[move.to], until: now + DRIBBLE.rollWindow } : null;
     this.heightMode = move.kind === "high" ? "high" : move.kind === "pound" ? this.heightMode : "low";
     const rhythm = this.rhythm();
     const pound = move.kind === "pound" && this.heightMode === "low";
@@ -489,9 +457,6 @@ export class DribbleController {
     this.windowScale = (move.kind === "switch" ? DRIBBLE.switchWindowScale : 1) * (b.sprinting ? DRIBBLE.sprintWindowScale : 1);
     this.hand = move.to;
     this.state = "flight";
-    this.lastMove = move;
-    this.moves++;
-    this.events.move(move);
 
     // Sprinting while frantically slapping it hand to hand is the one way to lose it.
     if (move.timing === "sloppy" && move.from !== move.to && b.sprinting) {
@@ -501,7 +466,17 @@ export class DribbleController {
         this.nudge(1.6 + this.random() * 0.9, 0.6);
         this.ball.spin.set((this.random() - 0.5) * 30, (this.random() - 0.5) * 20, (this.random() - 0.5) * 30);
         this.loseBall("spam", now);
+        return;
       }
+    }
+
+    // A key pressed during the carry acts as soon as the ball is out of the hand.
+    const next = this.buffered.shift();
+    if (next) {
+      this.state = "held";
+      this.caughtAt = now;
+      this.setTiming(next.err);
+      this.act(next.key, now);
     }
   }
 
@@ -537,7 +512,7 @@ export class DribbleController {
   private loseBall(reason: Parameters<DribbleEvents["lost"]>[0], now: number) {
     this.state = "loose";
     this.looseAt = now;
-    this.roll = [];
+    this.absorb = null;
     this.buffered = [];
     this.pending = null;
     this.lost++;

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Drives dribbling + combo scoring with real key presses, timed off the ball:
 // in each camera view (B, A, C) it performs every move — crossover, between the
-// legs and behind the back in both directions, the high dribble and the basic
+// legs and behind the back in both directions and the basic
 // switch — and checks the move, callout and score. Then it walks while
 // dribbling, loses the ball the only way left (sprinting while spamming sloppy
 // hand switches) and walks it down, and pushes the player into the floor bounds. Screenshot sequences of each move go to <out>/moves/.
@@ -141,7 +141,7 @@ async function ensureDribbling() {
   await page.waitForFunction(() => window.__game.dribble.state === "flight", null, { timeout: 2_000 });
 }
 
-const MOVE_PLAN = ["crossover", "crossover", "between", "between", "behind", "behind", "high", "switch"];
+const MOVE_PLAN = ["crossover", "crossover", "between", "between", "behind", "behind", "switch"];
 const CALLOUT = {
   crossover: "CROSSOVER!!",
   between: "BETWEEN THE LEGS!!",
@@ -169,8 +169,12 @@ async function doMove(view, index, kind, frames) {
     await roll(keys);
     try {
       await page.waitForFunction(
-        (n) => window.__game.dribble.moves > n || window.__game.dribble.state === "loose",
-        before.d.moves,
+        ({ n, kind }) => {
+          const d = window.__game.dribble;
+          // Keys act as they are pressed: the leading hand key is its own pound, so wait for the move itself.
+          return (d.moves > n && d.lastMove?.kind === kind) || d.state === "loose";
+        },
+        { n: before.d.moves, kind },
         { polling: "raf", timeout: 2_000 },
       );
     } catch {

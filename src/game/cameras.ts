@@ -98,6 +98,11 @@ export class CameraRig {
     this.setView(next);
   }
 
+  /** A tiny zoom punch on a dribble press (0…1); the settled damping eases it back out. */
+  kick(strength: number) {
+    if (this.glideT >= 1) this.current.fov -= 1.6 * strength;
+  }
+
   update(dt: number, subject: Subject) {
     poseFor(this.view, subject, this.ideal);
     if (this.glideT < 1) {
