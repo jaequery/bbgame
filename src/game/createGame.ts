@@ -537,6 +537,7 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
       speed: body.speed,
       dribbling: dribble.state !== "loose" && dribble.state !== "shot",
       split: dribble.split,
+      palm: dribble.palmEase,
       hands,
       shoot: shooting
         ? { dip: shot.phase === "gather" ? 1 : 0, air: THREE.MathUtils.clamp(shot.jumpY / 0.15, 0, 1), lean: shot.lean * SHOT.fade.lean }
