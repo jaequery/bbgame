@@ -89,6 +89,8 @@ export interface Body {
   velocity: THREE.Vector3;
   /** Rotation about Y; local +Z faces forward, local +X is the player's left. */
   yaw: number;
+  /** Heading the body is turning to (differs from `yaw` while it squares up to the hoop); the ball is aimed at it. */
+  aimYaw?: number;
   sprinting: boolean;
 }
 
@@ -499,7 +501,7 @@ export class DribbleController {
     const guess = planDribble(this.ball.position, toWorld(catchLocal, b.position, b.yaw, this.tmp), this.apexMargin);
     const future = this.tmp2.copy(b.position).addScaledVector(b.velocity, guess.tCatch);
     future.y = 0;
-    const plan = planDribble(this.ball.position, toWorld(catchLocal, future, b.yaw, this.tmp), this.apexMargin);
+    const plan = planDribble(this.ball.position, toWorld(catchLocal, future, b.aimYaw ?? b.yaw, this.tmp), this.apexMargin);
     const v = plan.velocity;
 
     // Imperfect contact: early = a weaker push, late = it squirts sideways.
