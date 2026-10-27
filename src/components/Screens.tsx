@@ -116,6 +116,10 @@ function Title({
           <span className={styles.btnMain}>1v1 vs BOT</span>
           <span className={styles.btnSub}>90s · attack, then defend · first to the bucket count wins</span>
         </button>
+        <button className={styles.button} onClick={() => onStart("twos")} data-testid="start-twos">
+          <span className={styles.btnMain}>2v2</span>
+          <span className={styles.btnSub}>You + AI teammate vs two bots · first to 11 · 3PT = 2</span>
+        </button>
         <button className={styles.button} onClick={() => onStart("defense")} data-testid="start-defense">
           <span className={styles.btnMain}>DEFENSE DRILL</span>
           <span className={styles.btnSub}>Space block · J / L swipe · I hand up</span>
@@ -272,8 +276,19 @@ function MatchOver({ result, onAgain, onTitle }: { result: MatchResult; onAgain:
     return () => window.removeEventListener("keydown", onKey);
   }, [onTitle]);
 
-  const duel = result.mode === "duel";
-  const verdict = !duel ? "TIME UP!!" : result.you > result.bot ? "YOU WIN!!" : result.you < result.bot ? "BOT WINS" : "DRAW";
+  const twos = result.mode === "twos";
+  const duel = result.mode === "duel" || twos;
+  const verdict = twos
+    ? result.won
+      ? "YOU WIN!!"
+      : "YOU LOSE"
+    : !duel
+      ? "TIME UP!!"
+      : result.you > result.bot
+        ? "YOU WIN!!"
+        : result.you < result.bot
+          ? "BOT WINS"
+          : "DRAW";
   return (
     <section className={`${styles.panel} ${styles.resultsPanel}`} aria-label="Match over">
       <span className={styles.burst} data-testid="match-verdict">
@@ -282,14 +297,14 @@ function MatchOver({ result, onAgain, onTitle }: { result: MatchResult; onAgain:
       <div className={styles.stats}>
         {duel && (
           <div>
-            <span className={styles.statLabel}>YOU</span>
+            <span className={styles.statLabel}>{twos ? "US" : "YOU"}</span>
             <span className={styles.statValue} data-testid="match-you">
               {result.you}
             </span>
           </div>
         )}
         <div>
-          <span className={styles.statLabel}>BOT</span>
+          <span className={styles.statLabel}>{twos ? "THEM" : "BOT"}</span>
           <span className={styles.statValue} data-testid="match-bot">
             {result.bot}
           </span>

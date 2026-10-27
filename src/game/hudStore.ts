@@ -57,6 +57,9 @@ export interface DuelHud {
   stops: number;
   /** Who has the ball: you attack on "offense", the bot on "defense". */
   phase: "offense" | "defense";
+  mode: "duel" | "defense" | "twos";
+  /** 2v2: the score a team plays to; null otherwise. */
+  target: number | null;
 }
 
 export interface HudState {
