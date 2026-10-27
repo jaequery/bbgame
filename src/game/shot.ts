@@ -261,6 +261,8 @@ export class ShotController {
   /** I / K held down in the triple-threat hold: the hunch and the stepped-out foot stay for as long as they are. */
   private iHeld = false;
   private kHeld = false;
+  /** J held down in the triple-threat hold: the left-hand reach stays out at its farthest until it is let go. */
+  private jHeld = false;
   /** A tap of I / K still lasts until then (s). */
   private iUntil = -Infinity;
   private kUntil = -Infinity;
@@ -325,7 +327,7 @@ export class ShotController {
     this.jabAmount = 0;
     this.jabOffset.set(0, 0, 0);
     this.protectAmount = 0;
-    this.iHeld = this.kHeld = false;
+    this.iHeld = this.kHeld = this.jHeld = false;
     this.iUntil = this.kUntil = -Infinity;
     this.nextKey = null;
     this.fade = false;
@@ -405,6 +407,7 @@ export class ShotController {
       return "move";
     }
     if (key === "J" || key === "L") {
+      if (key === "J") this.jHeld = true;
       if (this.phase === "hold") this.startHoldMove(key, now);
       else if (this.phase !== "pump") this.nextKey = key; // mid-reach: acts when the ball is back
       return "move";
@@ -423,6 +426,7 @@ export class ShotController {
   holdKeyUp(key: DribbleKey) {
     if (key === "I") this.iHeld = false;
     else if (key === "K") this.kHeld = false;
+    else if (key === "J") this.jHeld = false;
   }
 
   private startHoldMove(key: "J" | "L", now: number) {
@@ -485,6 +489,8 @@ export class ShotController {
         break;
       }
       case "ext": {
+        // A held J keeps the ball out at the top of the reach; letting go brings it back.
+        if (this.jHeld && this.extSide === "L" && now - this.moveAt >= SHOT.extTime / 2) this.moveAt = now - SHOT.extTime / 2;
         const u = Math.min(1, (now - this.moveAt) / SHOT.extTime);
         const reach = smooth(Math.sin(Math.PI * u));
         const side = this.extSide === "L" ? 1 : -1;
