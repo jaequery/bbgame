@@ -1,6 +1,6 @@
 import { MOVE_NAMES, type Move, type MoveKind } from "./dribble";
 import { hudStore, type Callout } from "./hudStore";
-import type { HoldKind, ShotKind, ShotResult } from "./shot";
+import type { FinishKind, HoldKind, ShotKind, ShotResult } from "./shot";
 import { HOLD_NAMES } from "./shot";
 
 /** Anything that scores as a combo move: a dribble move or a move out of the triple-threat hold. */
@@ -51,6 +51,9 @@ export const SHOT_CALLOUTS: Record<ShotKind, string> = {
   board: "OFF THE BOARD…",
   airball: "AIRBALL…",
 };
+
+/** A made running finish is named for what it was, not how the ball went in. */
+const FINISH_CALLOUTS: Record<FinishKind, string> = { layup: "LAYUP!!", dunk: "SLAM DUNK!!" };
 
 export interface ComboSnapshot {
   score: number;
@@ -159,7 +162,8 @@ export class ComboScorer {
       : cashed > 0
         ? `${r.three ? "3PT" : "2PT"} ${fmt(base)} + COMBO ${fmt(cashed)} ×${multiplier}`
         : `${r.three ? "3PT" : "2PT"}`;
-    this.publish({ text: SHOT_CALLOUTS[r.kind], points, tone: r.made ? "shot" : "miss", detail });
+    const text = r.made && r.finish ? FINISH_CALLOUTS[r.finish] : SHOT_CALLOUTS[r.kind];
+    this.publish({ text, points, tone: r.made ? "shot" : "miss", detail });
   }
 
   update(now: number) {
