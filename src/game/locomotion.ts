@@ -17,6 +17,12 @@ export const MOVE = {
   faceHoopTime: 0.75,
   /** Any dribble key press squares the player up to the hoop for this long (s). */
   pressFaceHoopTime: 2,
+  /** Distance (m) of the power dribble's forward dash. */
+  dashDistance: 2.4,
+  /** Comma held this long (s) turns the player's back to the hoop. */
+  backDownDelay: 0.25,
+  /** Speed multiplier while backing down. */
+  backDownSpeed: 0.5,
   /** A cut sharper than this (rad) at speed squeaks the sneakers. */
   squeakAngle: 1.7,
   squeakMinSpeed: 2.2,
@@ -46,6 +52,8 @@ export class Locomotion {
   private spinTime = 0;
   /** Extra yaw (rad) the spin adds on top of `yaw`. */
   spinAngle = 0;
+  /** Backing down: the back (and butt) is to the hoop. */
+  backingDown = false;
   private readonly want = new THREE.Vector3();
 
   constructor(readonly position: THREE.Vector3) {}
@@ -53,11 +61,12 @@ export class Locomotion {
   /**
    * @param input world-space move direction on the floor (length ≤ 1)
    * @param sprint Shift held
+   * @param heading with the feet planted (`input` is zero): a direction to turn toward on the spot, whatever the hoop-facing
    */
-  step(dt: number, input: THREE.Vector3, sprint: boolean, dribbling: boolean, onSqueak: (speed: number) => void) {
+  step(dt: number, input: THREE.Vector3, sprint: boolean, dribbling: boolean, onSqueak: (speed: number) => void, heading?: THREE.Vector3) {
     const moving = input.lengthSq() > 1e-4;
     this.sprinting = sprint && moving;
-    const top = (this.sprinting ? MOVE.sprint : MOVE.walk) * (dribbling ? MOVE.dribbling : 1);
+    const top = (this.sprinting ? MOVE.sprint : MOVE.walk) * (dribbling ? MOVE.dribbling : 1) * (this.backingDown ? MOVE.backDownSpeed : 1);
     this.want.copy(input).multiplyScalar(top);
 
     const speed = Math.hypot(this.velocity.x, this.velocity.z);
@@ -96,8 +105,16 @@ export class Locomotion {
 
     // Face the way we're going; square up to the hoop when standing.
     this.faceHoopLeft = Math.max(0, this.faceHoopLeft - dt);
-    const target = moving && !this.facingHoop ? Math.atan2(input.x, input.z) : this.hoopYaw;
-    const rate = (this.facingHoop ? MOVE.faceHoopRate : MOVE.turnRate) * dt;
+    const turning = heading !== undefined && heading.lengthSq() > 1e-4;
+    const squared = (this.facingHoop || this.backingDown) && !turning;
+    const target = turning
+      ? Math.atan2(heading.x, heading.z)
+      : this.backingDown
+        ? this.hoopYaw + Math.PI
+        : moving && !this.facingHoop
+          ? Math.atan2(input.x, input.z)
+          : this.hoopYaw;
+    const rate = (squared ? MOVE.faceHoopRate : MOVE.turnRate) * dt;
     let d = target - this.yaw;
     d = Math.atan2(Math.sin(d), Math.cos(d));
     this.yaw += THREE.MathUtils.clamp(d, -rate, rate);
@@ -129,6 +146,11 @@ export class Locomotion {
     this.slideVel.copy(dir).multiplyScalar(distance * MOVE.slideRate);
   }
 
+  /** Power dribble: a burst of `distance` metres along the floor direction `dir` (unit vector). */
+  dash(dir: THREE.Vector3, distance = MOVE.dashDistance) {
+    this.slide(dir, distance);
+  }
+
   /** Turns a full circle (+1 = to the player's left) over `time` seconds. */
   spin(dir: 1 | -1, time: number) {
     this.spinDir = dir;
@@ -156,6 +178,7 @@ export class Locomotion {
     this.spinLeft = 0;
     this.spinAngle = 0;
     this.faceHoopLeft = 0;
+    this.backingDown = false;
     this.yaw = Math.atan2(HOOP_X - at.x, -at.z);
     this.facing.set(Math.sin(this.yaw), 0, Math.cos(this.yaw));
   }

@@ -95,6 +95,8 @@ export interface GameDebugHandle {
     /** The triple-threat hold (pump fake, hold, jab, reach), and how far the jab has stepped out (0…1). */
     inHold: boolean;
     jab: number;
+    /** 0…1 how far the head-down hunch over the ball (I in the hold) has come down. */
+    protect: number;
     /** Seconds to the jump's apex while rising with the ball (null otherwise). */
     apexIn: number | null;
     jumpHeight: number;
@@ -263,7 +265,8 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
     move: (m) => {
       combo.onMove(m, simTime);
       session.onMove(m);
-      // Crossovers (and hold-crosses), between the legs and behind the back are played facing the basket.
+      // Crossovers, between the legs and behind the back are played facing the basket.
+      if (m.kind === "crossover") playSwish();
       if (m.kind === "crossover" || m.kind === "between" || m.kind === "behind") body.faceHoop();
     },
     press: (key) => pressFeedback(key),
@@ -365,7 +368,7 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
   const onBlur = () => {
     held.clear();
     // A palmed ball can't stay palmed by a key nobody can release any more.
-    for (const key of ["J", "L"] as const) queue.push({ key, t: simAt(performance.now() / 1000), up: true });
+    for (const key of ["J", "L", "I", "K"] as const) queue.push({ key, t: simAt(performance.now() / 1000), up: true });
   };
   window.addEventListener("keydown", onKeyDown);
   window.addEventListener("keyup", onKeyUp);
@@ -406,14 +409,23 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
   };
   void redrawWhenFontsLoad(fonts);
 
-  /** In the triple-threat hold J / K / L are moves out of it; the other dribble keys leave it and dribble. */
+  /** In the triple-threat hold I / J / K / L are moves out of it; the other dribble keys leave it and dribble. */
   const pressKey = (key: DribbleKey) => {
     if (shot.inHold) {
       const result = shot.holdKey(key, simTime);
       if (result === "move") return pressFeedback(key);
     }
+    const live = dribble.state !== "loose" && dribble.state !== "shot";
     dribble.press(key, simTime);
+    // I is the power dribble: a dash toward where WASD points, else straight at the hoop.
+    if (key === "I" && live) {
+      if (input.lengthSq() > 1e-4) dashDir.copy(input).normalize();
+      else dashDir.set(Math.sin(body.hoopYaw), 0, Math.cos(body.hoopYaw));
+      body.dash(dashDir);
+    }
   };
+  const dashDir = new THREE.Vector3();
+  let commaSince: number | null = null;
 
   const camForward = new THREE.Vector3();
   const camRight = new THREE.Vector3();
@@ -556,11 +568,19 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
         const { key, up } = queue.shift()!;
         if (key === "ShootDown") shot.press(simTime, move);
         else if (key === "ShootUp") shot.lift(simTime);
-        else if (up) dribble.keyUp(key, simTime);
+        else if (up) {
+          shot.holdKeyUp(key);
+          dribble.keyUp(key, simTime);
+        }
         else pressKey(key);
       }
       const dribbling = dribble.state !== "loose" && dribble.state !== "shot";
-      body.step(STEP, shot.feetLocked ? still : move, sprint, dribbling, squeak);
+      // Holding comma backs down: the back to the hoop, as in the post.
+      if (held.has("Comma") && !shot.feetLocked && dribbling) commaSince ??= simTime;
+      else commaSince = null;
+      body.backingDown = commaSince !== null && simTime - commaSince >= MOVE.backDownDelay;
+      // In the triple-threat hold the feet stay planted but the body turns toward the way WASD points.
+      body.step(STEP, shot.feetLocked ? still : move, sprint, dribbling, squeak, shot.inHold ? move : undefined);
       dribble.update(simTime, STEP);
       shot.update(simTime);
       combo.update(simTime);
@@ -592,6 +612,7 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
             air: THREE.MathUtils.clamp(shot.jumpY / 0.15, 0, 1),
             lean: shot.lean * SHOT.fade.lean,
             jab: shot.jabAmount,
+            hunch: shot.protectAmount,
           }
         : undefined,
     });
@@ -675,6 +696,7 @@ export function createGame(container: HTMLElement, fonts: GameFonts): Game {
           phase: shot.phase,
           inHold: shot.inHold,
           jab: +shot.jabAmount.toFixed(3),
+          protect: +shot.protectAmount.toFixed(3),
           apexIn: apexIn === null ? null : +apexIn.toFixed(4),
           jumpHeight: +shot.jumpY.toFixed(3),
           fade: shot.fade,

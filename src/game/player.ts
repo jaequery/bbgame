@@ -42,8 +42,8 @@ export interface PoseFrame {
   palm?: number;
   /** World wrist targets; null = that arm guards. */
   hands: Record<Side, THREE.Vector3 | null>;
-  /** Jump-shot pose: `dip` 0…1 knees loading before take-off, `air` 0…1 legs extended off the floor, `lean` torso tilt back (rad, fadeaway), `jab` 0…1 lead foot stepped out. */
-  shoot?: { dip: number; air: number; lean?: number; jab?: number };
+  /** Jump-shot pose: `dip` 0…1 knees loading before take-off, `air` 0…1 legs extended off the floor, `lean` torso tilt back (rad, fadeaway), `jab` 0…1 lead foot stepped out, `hunch` 0…1 bent forward over the ball, head kept up on the hoop. */
+  shoot?: { dip: number; air: number; lean?: number; jab?: number; hunch?: number };
 }
 
 export interface Player {
@@ -207,6 +207,7 @@ export function createPlayer(fonts: GameFonts): Player {
   let air = 0;
   let lean = 0;
   let jab = 0;
+  let hunch = 0;
   let upright = 0;
   let palm = 0;
   let ready = false;
@@ -223,6 +224,7 @@ export function createPlayer(fonts: GameFonts): Player {
       air += ((f.shoot?.air ?? 0) - air) * k(16);
       lean += ((f.shoot?.lean ?? 0) - lean) * k(18);
       jab += ((f.shoot?.jab ?? 0) - jab) * k(30);
+      hunch += ((f.shoot?.hunch ?? 0) - hunch) * k(12);
       palm += ((f.palm ?? 0) - palm) * k(10);
       upright += ((f.shoot ? 1 : 0) - upright) * k(10);
       // One full gait cycle every ~1.5 m.
@@ -232,7 +234,7 @@ export function createPlayer(fonts: GameFonts): Player {
       const bob = Math.sin(f.elapsed * 2.4) * 0.012 * (1 - stride);
       const swing = Math.sin(phase) * 0.55 * stride;
       const lift = 0.9 * stride;
-      const sink = 0.07 * crouch + 0.03 * palm;
+      const sink = 0.07 * crouch + 0.03 * palm + 0.06 * hunch;
       // Jumper: knees load on the dip, then the legs straighten and the toes point in the air.
       const load = 0.12 * dip;
       const extend = air;
@@ -243,8 +245,10 @@ export function createPlayer(fonts: GameFonts): Player {
       j.kneeR.rotation.x = STANCE.knee + 0.3 * crouch + Math.max(0, -Math.cos(phase)) * lift - bob * 2 + 0.55 * dip - 0.6 * extend;
       j.ankleL.rotation.x = -0.32 + 0.6 * extend;
       j.ankleR.rotation.x = -0.52 + 0.7 * extend;
-      j.spine.rotation.x = (0.28 + 0.1 * crouch + 0.08 * stride + 0.14 * palm) * (1 - upright) + (0.04 + 0.12 * dip) * upright - lean;
-      j.neck.rotation.x = -0.25 * (1 - upright) - 0.1 * upright;
+      j.spine.rotation.x = (0.28 + 0.1 * crouch + 0.08 * stride + 0.14 * palm) * (1 - upright) + (0.04 + 0.12 * dip + 0.4 * hunch) * upright - lean;
+      j.neck.rotation.x = -0.25 * (1 - upright) - 0.1 * upright - 0.4 * hunch;
+      j.chest.rotation.x = 0.12 + 0.2 * hunch;
+      j.head.rotation.x = -0.12 - 0.2 * hunch;
 
       // Arms: a hand on the ball, the other one out guarding it.
       root.updateMatrixWorld(true);

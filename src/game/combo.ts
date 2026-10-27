@@ -29,6 +29,7 @@ export const COMBO = {
     jab: 90,
     extL: 70,
     extR: 70,
+    protect: 50,
   } satisfies Record<ScoredKind, number>,
   /** Each straight repeat of the same move scores this much of the last one. */
   repeatFactor: 0.5,
