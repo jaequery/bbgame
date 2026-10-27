@@ -35,6 +35,7 @@ Full launch/verify procedure: `.claude/skills/verify-app/SKILL.md` (mirrored in 
   - `dimensions.ts` — every real-world measurement (metres). Use these, never magic numbers.
   - `court.ts` (floor + painted lines), `hoop.ts`, `gym.ts`, `player.ts`, `ball.ts` — scene parts.
   - `ballPhysics.ts`, `hoopPhysics.ts` — the ball as a rigid body; rim/backboard/net colliders.
+  - `duel.ts` — the 1v1 / defense-drill bot (`BotOffense`, `BotGuard`) and your defensive moves (`Defender`).
   - `dribble.ts`, `shot.ts`, `combo.ts` — dribble moves, the Space jumper, scoring + cash-in.
   - `toon.ts` — cel-shaded materials (`toon()`) and ink outlines (`outline()` / `inked()`).
   - `cameras.ts` — the three views and the glide between them.
@@ -64,6 +65,7 @@ Full launch/verify procedure: `.claude/skills/verify-app/SKILL.md` (mirrored in 
   I crossover · K between legs · `,` behind back (hold it: back down, back to the hoop) · U right spin · O left spin · Space jumper (hold, release at the top; hold WASD pointing away from the hoop and it becomes a fadeaway: leans back, tighter timing window; a quick tap < `SHOT.tapTime` is a pump fake instead) ·
   sprint (Shift) at the hoop + Space = running finish, which beats the pump fake and the jumper: a layup within `SHOT.finish.layupRange` (running one-hand take-off, released at the top, can miss), a dunk within `SHOT.finish.dunkRange` (always scores) ·
   triple-threat hold (after a pump fake; ball in both hands until you act): WASD turns the player on the spot toward that direction · K jab step (hold it: the foot stays out) · J / L reach the ball out left / right (J/L mean reach here, not palm) · I hunch over the ball, head down, shielding it from the hoop (hold it) · I, K and a reach combine · Space jumper or pump again · `,` U O resume dribbling ·
+  **1v1 vs BOT** (title screen, 90 s): you attack the +X hoop with the bot guarding (it shadows, strips a dribbler it crowds, jumps at your jumper), then after every basket, miss or steal the bot attacks the -X hoop and you defend; 2 points a basket. **Defense drill**: defense only. Defense controls: Space jump to block (be airborne at the bot's release) · J swipe left to right · L swipe right to left (the sweeping hand strips the bot's ball if it crosses its path) · I hold hand up (contests the shot) · WASD move (you stay squared up to the bot) ·
   V cycle camera (B → A → C). A ball left untouched in the hand dribbles once after 3 s; otherwise it only moves on a key press.
   Travelling: once the dribble ends and the ball rests in the hand, only two steps are allowed (`MOVE.maxSteps` × `MOVE.stepLength`); the third is blocked until a new dribble starts (count resets).
 - Never commit `.env`; document new env vars in `.env.example`.

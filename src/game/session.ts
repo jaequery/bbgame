@@ -5,7 +5,17 @@
 import type { Move, MoveKind } from "./dribble";
 import { RUNS } from "@/lib/runs";
 
-export type PlayMode = "session" | "practice";
+/** "duel" is a timed 1v1 against the bot (offense, then defense); "defense" is the defense drill alone. */
+export type PlayMode = "session" | "practice" | "duel" | "defense";
+
+/** What the match-over screen shows after a duel or a defense drill. */
+export interface MatchResult {
+  mode: "duel" | "defense";
+  you: number;
+  bot: number;
+  /** Shots blocked or balls stolen. */
+  stops: number;
+}
 
 /** What the results screen shows when the buzzer goes. */
 export interface SessionResult {
@@ -22,17 +32,17 @@ export class SessionClock {
   moves = 0;
   moveCounts: Partial<Record<MoveKind, number>> = {};
 
-  start(mode: PlayMode, now: number) {
+  start(mode: PlayMode, now: number, seconds: number = RUNS.sessionSeconds) {
     this.mode = mode;
-    this.endsAt = now + RUNS.sessionSeconds;
+    this.endsAt = now + seconds;
     this.bestCombo = 0;
     this.moves = 0;
     this.moveCounts = {};
   }
 
-  /** Seconds left in a Session; null in practice or between runs. */
+  /** Seconds left on the clock; null in practice or between runs. */
   timeLeft(now: number): number | null {
-    return this.mode === "session" ? Math.max(0, this.endsAt - now) : null;
+    return this.mode && this.mode !== "practice" ? Math.max(0, this.endsAt - now) : null;
   }
 
   onMove(move: Move) {

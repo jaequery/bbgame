@@ -74,6 +74,8 @@ export class Locomotion {
   private walked = 0;
   /** The dribble has ended and the ball rests in the hand: walking is limited to `MOVE.maxSteps` steps. */
   holdingBall = false;
+  /** On defense: keep the body squared up to this floor point (the ball handler) instead of the hoop. */
+  faceTarget: THREE.Vector3 | null = null;
   private readonly want = new THREE.Vector3();
 
   constructor(readonly position: THREE.Vector3) {}
@@ -142,14 +144,15 @@ export class Locomotion {
     this.faceHoopLeft = Math.max(0, this.faceHoopLeft - dt);
     const turning = heading !== undefined && heading.lengthSq() > 1e-4;
     const squared = (this.facingHoop || this.backingDown) && !turning;
-    const target = turning
+    let target = turning
       ? Math.atan2(heading.x, heading.z)
       : this.backingDown
         ? this.hoopYaw + Math.PI
         : moving && !this.facingHoop
           ? Math.atan2(input.x, input.z)
           : this.hoopYaw;
-    const rate = (squared ? MOVE.faceHoopRate : MOVE.turnRate) * dt;
+    if (this.faceTarget && !turning) target = Math.atan2(this.faceTarget.x - p.x, this.faceTarget.z - p.z);
+    const rate = (squared || (this.faceTarget && !turning) ? MOVE.faceHoopRate : MOVE.turnRate) * dt;
     let d = target - this.yaw;
     d = Math.atan2(Math.sin(d), Math.cos(d));
     this.yaw += THREE.MathUtils.clamp(d, -rate, rate);

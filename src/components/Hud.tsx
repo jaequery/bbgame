@@ -26,6 +26,17 @@ const CONTROLS: [string, string][] = [
   ["ESC", "Menu"],
 ];
 
+const DEFENSE_CONTROLS: [string, string][] = [
+  ["SPACE", "Jump · block"],
+  ["J", "Swipe → (left to right)"],
+  ["L", "Swipe ← (right to left)"],
+  ["I", "Hand up (hold)"],
+  ["WASD", "Move"],
+  ["SHIFT", "Sprint"],
+  ["V", "View"],
+  ["ESC", "Menu"],
+];
+
 const CHAIN_SLOTS = 4;
 const GRADE_TEXT = { perfect: "PERFECT!!", early: "EARLY", late: "LATE" } as const;
 const fmt = new Intl.NumberFormat("en-US");
@@ -33,6 +44,7 @@ const fmt = new Intl.NumberFormat("en-US");
 export default function Hud() {
   const hud = useSyncExternalStore(hudStore.subscribe, hudStore.getSnapshot, hudStore.getSnapshot);
   const chain = hud.chain.slice(-CHAIN_SLOTS);
+  const controls = hud.duel?.phase === "defense" ? DEFENSE_CONTROLS : CONTROLS;
 
   return (
     <div className={styles.hud} data-testid="hud">
@@ -56,6 +68,20 @@ export default function Hud() {
           <span className={styles.clockLabel}>TIME</span>
           <span className={styles.clockValue} data-testid="hud-clock">
             {hud.timeLeft.toFixed(1)}
+          </span>
+        </section>
+      )}
+
+      {hud.screen === "play" && hud.duel && (
+        <section className={styles.versus} aria-label="Scoreboard" data-testid="hud-duel" data-phase={hud.duel.phase}>
+          <span className={styles.versusPhase} data-testid="hud-phase">
+            {hud.duel.phase === "offense" ? "OFFENSE" : "DEFENSE"}
+          </span>
+          <span className={styles.versusScore}>
+            YOU <b data-testid="hud-you">{hud.duel.you}</b> – <b data-testid="hud-bot">{hud.duel.bot}</b> BOT
+          </span>
+          <span className={styles.versusStops}>
+            STOPS <b data-testid="hud-stops">{hud.duel.stops}</b>
           </span>
         </section>
       )}
@@ -149,7 +175,7 @@ export default function Hud() {
       </section>
 
       <section className={styles.controls} aria-label="Controls">
-        {CONTROLS.map(([key, label]) => (
+        {controls.map(([key, label]) => (
           <div key={key} className={styles.control}>
             <kbd className={key.length > 1 ? styles.keyWide : styles.key}>{key}</kbd>
             <span>{label}</span>
