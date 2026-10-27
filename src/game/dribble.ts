@@ -44,6 +44,8 @@ export const DRIBBLE = {
   dropApexMargin: 0.03,
   /** Hold-cross: the player slides this far (m) toward the receiving side. */
   slideDistance: 0.55,
+  /** Crossover: tap one hand key twice, then the other, all within this long (s). */
+  crossTapWindow: 0.9,
   /** A spin move turns the player a full circle in this long (s). */
   spinTime: 0.55,
   /** A forced pound (the ball hand's key) is pushed harder: caught faster, so quicker. */
@@ -204,6 +206,10 @@ export class DribbleController {
   /** The hand key being held down on the ball (palming), and the sim time it went down. */
   private palmKey: DribbleKey | null = null;
   private palmAt = 0;
+  /** Recent hand-key taps, for the double-tap crossover sequences (J J L / L L J). */
+  private taps: { key: DribbleKey; at: number }[] = [];
+  /** The press being handled completes a crossover sequence. */
+  private crossArmed = false;
   /** 0…1 how far the palm pose has eased in (ball raised, player hunched). */
   palmEase = 0;
   /** Sim time the hand took the ball (NaN = the next update). */
@@ -304,18 +310,21 @@ export class DribbleController {
     const absorb = this.absorb;
     this.absorb = null;
     if (absorb && key === absorb.key && now <= absorb.until) return;
+    this.crossArmed = false;
+    if (KEY_HAND[key]) {
+      this.taps.push({ key, at: now });
+      if (this.taps.length > 3) this.taps.shift();
+      const [a, b, c] = this.taps;
+      if (this.taps.length === 3 && a.key === b.key && c.key !== a.key && c.at - a.at <= DRIBBLE.crossTapWindow) {
+        this.crossArmed = true;
+        this.taps = [];
+      }
+    } else this.taps = [];
     switch (this.state) {
       case "held":
         if (this.palmKey) {
-          // Palming with one hand and pressing the other hand's key: a hold-cross.
-          const palmed = this.palmKey;
+          // Pressing another key lets go of the palm; holding no longer crosses over.
           this.palmKey = null;
-          const keyHand = KEY_HAND[key];
-          if (keyHand && keyHand !== this.hand) {
-            this.startMove({ kind: "crossover", from: this.hand, to: keyHand, keys: [palmed, key], timing: "clean" }, now);
-            this.events.slide(keyHand);
-            return;
-          }
         }
         this.touch(key, now);
         return;
@@ -446,8 +455,11 @@ export class DribbleController {
         ? this.heightMode === "high"
           ? "high"
           : "pound"
-        : "switch"
+        : this.crossArmed
+          ? "crossover"
+          : "switch"
       : PATH_MOVE[key];
+    this.crossArmed = false;
     this.startMove({ kind, from, to, keys: [key], timing: this.contactTiming, ...(kind === "pound" ? { power: true } : {}) }, now);
   }
 
