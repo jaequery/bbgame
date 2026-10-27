@@ -91,6 +91,10 @@ bash scripts/verify/doctor.sh            # node, deps, .env, docker, compose sta
 - **Jumper driver:** `node scripts/verify/jumper.mjs [--url …] [--out artifacts]` — combo → perfect
   jumper, early and late bricks, from mid-range and beyond the arc; writes `jumper-report.json` + `jumper/`.
 
+- **Fadeaway driver:** `node scripts/verify/fadeaway.mjs [--url …] [--out artifacts]` — Space vs **F**
+  from mid-range: lean, drift away from the rim, tighter window, perfect make, late/early grades;
+  writes `fadeaway-report.json` + `fadeaway/` (view C screenshots of the lean).
+
 ## Evidence
 
 - Screenshots and `drive-report.json` from `artifacts/`.

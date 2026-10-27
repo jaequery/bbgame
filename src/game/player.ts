@@ -40,8 +40,8 @@ export interface PoseFrame {
   split: number;
   /** World wrist targets; null = that arm guards. */
   hands: Record<Side, THREE.Vector3 | null>;
-  /** Jump-shot pose: `dip` 0…1 knees loading before take-off, `air` 0…1 legs extended off the floor. */
-  shoot?: { dip: number; air: number };
+  /** Jump-shot pose: `dip` 0…1 knees loading before take-off, `air` 0…1 legs extended off the floor, `lean` torso tilt back (rad, fadeaway). */
+  shoot?: { dip: number; air: number; lean?: number };
 }
 
 export interface Player {
@@ -203,6 +203,7 @@ export function createPlayer(fonts: GameFonts): Player {
   let split = 0;
   let dip = 0;
   let air = 0;
+  let lean = 0;
   let upright = 0;
   let ready = false;
 
@@ -216,6 +217,7 @@ export function createPlayer(fonts: GameFonts): Player {
       split += (f.split - split) * k(14);
       dip += ((f.shoot?.dip ?? 0) - dip) * k(20);
       air += ((f.shoot?.air ?? 0) - air) * k(16);
+      lean += ((f.shoot?.lean ?? 0) - lean) * k(18);
       upright += ((f.shoot ? 1 : 0) - upright) * k(10);
       // One full gait cycle every ~1.5 m.
       phase += (f.speed * f.dt * Math.PI * 2) / 1.5;
@@ -235,7 +237,7 @@ export function createPlayer(fonts: GameFonts): Player {
       j.kneeR.rotation.x = STANCE.knee + 0.3 * crouch + Math.max(0, -Math.cos(phase)) * lift - bob * 2 + 0.55 * dip - 0.6 * extend;
       j.ankleL.rotation.x = -0.32 + 0.6 * extend;
       j.ankleR.rotation.x = -0.52 + 0.7 * extend;
-      j.spine.rotation.x = (0.28 + 0.1 * crouch + 0.08 * stride) * (1 - upright) + (0.04 + 0.12 * dip) * upright;
+      j.spine.rotation.x = (0.28 + 0.1 * crouch + 0.08 * stride) * (1 - upright) + (0.04 + 0.12 * dip) * upright - lean;
       j.neck.rotation.x = -0.25 * (1 - upright) - 0.1 * upright;
 
       // Arms: a hand on the ball, the other one out guarding it.

@@ -60,7 +60,7 @@ Full launch/verify procedure: `.claude/skills/verify-app/SKILL.md` (mirrored in 
 - **Debug handle:** `window.__game` (dev only) exposes `frames`, `world`, `player`, `ball`,
   `camera`, `cycleView()`, `setView()`, `shot`, `placePlayer()`, `setTimeScale()`. Extend it when you add game state that automation needs.
 - **Controls** (canonical): WASD move · J left hand · L right hand · I high/crossover path ·
-  K between legs · `,` behind back · Space jumper · V cycle camera (B → A → C).
+  K between legs · `,` behind back · Space jumper · F fadeaway (jumper leaning away from the hoop, tighter timing window) · V cycle camera (B → A → C).
 - Never commit `.env`; document new env vars in `.env.example`.
 - Next.js here is v16 with Cache Components on — read `node_modules/next/dist/docs/` before
   using an API you haven't checked. A route handler that must run per request calls
