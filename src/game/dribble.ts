@@ -146,7 +146,7 @@ function geometry(kind: MoveKind, from: Hand, height: number): MoveGeometry {
     case "spinR": {
       // Pivot with the ball kept on the outside hip, swung across to the catching hand at the end.
       const side = (h: Hand) => (h === "L" ? 1 : -1);
-      const to: Hand = kind === "spinL" ? "L" : "R";
+      const to: Hand = from === "L" ? "R" : "L";
       return {
         carry: [
           [side(from) * 0.44, 0.78, 0.08],
@@ -439,8 +439,8 @@ export class DribbleController {
   private act(key: DribbleKey, now: number) {
     const from = this.hand;
     const keyHand = KEY_HAND[key];
-    const spin = key === "U" ? "R" : key === "O" ? "L" : null;
-    const to: Hand = keyHand ?? spin ?? (from === "L" ? "R" : "L");
+    // A spin always ends with the ball in the other hand, whichever way it turns.
+    const to: Hand = keyHand ?? (from === "L" ? "R" : "L");
     const kind: MoveKind = keyHand
       ? keyHand === from
         ? this.heightMode === "high"
